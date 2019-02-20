@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>logFormatVersion</key>
+	<integer>9</integer>
+	<key>logs</key>
+	<dict>
+		<key>107693FC-FB18-454E-8766-86D0A92F7FD8</key>
+		<dict>
+			<key>className</key>
+			<string>IDEActivityLogSection</string>
+			<key>documentTypeString</key>
+			<string>&lt;nil&gt;</string>
+			<key>domainType</key>
+			<string>Xcode.IDEActivityLogDomainType.BuildLog</string>
+			<key>fileName</key>
+			<string>107693FC-FB18-454E-8766-86D0A92F7FD8.xcactivitylog</string>
+			<key>highLevelStatus</key>
+			<string>W</string>
+			<key>schemeIdentifier-containerName</key>
+			<string>conjugateGradient project</string>
+			<key>schemeIdentifier-schemeName</key>
+			<string>conjugateGradient</string>
+			<key>schemeIdentifier-sharedScheme</key>
+			<integer>1</integer>
+			<key>signature</key>
+			<string>Build conjugateGradient</string>
+			<key>timeStartedRecording</key>
+			<real>571318345.58213305</real>
+			<key>timeStoppedRecording</key>
+			<real>571318347.78352797</real>
+			<key>title</key>
+			<string>Build conjugateGradient</string>
+			<key>uniqueIdentifier</key>
+			<string>107693FC-FB18-454E-8766-86D0A92F7FD8</string>
+		</dict>
+		<key>8D04D22E-977B-423A-A16A-1DE2E272DC37</key>
+		<dict>
+			<key>className</key>
+			<string>IDEActivityLogSection</string>
+			<key>documentTypeString</key>
+			<string>&lt;nil&gt;</string>
+			<key>domainType</key>
+			<string>Xcode.IDEActivityLogDomainType.BuildLog</string>
+			<key>fileName</key>
+			<string>8D04D22E-977B-423A-A16A-1DE2E272DC37.xcactivitylog</string>
+			<key>highLevelStatus</key>
+			<string>W</string>
+			<key>schemeIdentifier-containerName</key>
+			<string>conjugateGradient project</string>
+			<key>schemeIdentifier-schemeName</key>
+			<string>conjugateGradient</string>
+			<key>schemeIdentifier-sharedScheme</key>
+			<integer>1</integer>
+			<key>signature</key>
+			<string>Build conjugateGradient</string>
+			<key>timeStartedRecording</key>
+			<real>572263295.21704197</real>
+			<key>timeStoppedRecording</key>
+			<real>572263295.25271595</real>
+			<key>title</key>
+			<string>Build conjugateGradient</string>
+			<key>uniqueIdentifier</key>
+			<string>8D04D22E-977B-423A-A16A-1DE2E272DC37</string>
+		</dict>
+		<key>B007EC93-7AB3-4B35-A014-2A416F78B467</key>
+		<dict>
+			<key>className</key>
+			<string>IDEActivityLogSection</string>
+			<key>documentTypeString</key>
+			<string>&lt;nil&gt;</string>
+			<key>domainType</key>
+			<string>Xcode.IDEActivityLogDomainType.BuildLog</string>
+			<key>fileName</key>
+			<string>B007EC93-7AB3-4B35-A014-2A416F78B467.xcactivitylog</string>
+			<key>highLevelStatus</key>
+			<string>W</string>
+			<key>schemeIdentifier-containerName</key>
+			<string>conjugateGradient project</string>
+			<key>schemeIdentifier-schemeName</key>
+			<string>conjugateGradient</string>
+			<key>schemeIdentifier-sharedScheme</key>
+			<integer>1</integer>
+			<key>signature</key>
+			<string>Build conjugateGradient</string>
+			<key>timeStartedRecording</key>
+			<real>572263498.49974298</real>
+			<key>timeStoppedRecording</key>
+			<real>572263500.90545297</real>
+			<key>title</key>
+			<string>Build conjugateGradient</string>
+			<key>uniqueIdentifier</key>
+			<string>B007EC93-7AB3-4B35-A014-2A416F78B467</string>
+		</dict>
+	</dict>
+</dict>
+</plist>
