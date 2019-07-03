@@ -1,0 +1,14 @@
+A	b	size	nnz	time	iterations	||Ax-b||_2/||b||_2	info
+debug_matrix/A_complex.mtx	debug_matrix/b_complex.mtx	5	7	3.983e-05	4	5.70639e-16	0
+debug_matrix/A_identity.mtx	debug_matrix/b_identity.mtx	5	5	2.9497e-05	4	0	0
+debug_matrix/A_anti_diag.mtx	debug_matrix/b_identity.mtx	5	5	2.9163e-05	4	0	0
+debug_matrix/A_skew.mtx	debug_matrix/b_identity.mtx	5	5	3.7174e-05	4	0	0
+debug_matrix/A_eye_2x2.mtx	debug_matrix/b_2.mtx	2	2	2.6099e-05	2	0	0
+debug_matrix/A_skew_2x2.mtx	debug_matrix/b_2.mtx	2	2	1.8188e-05	2000	1	1
+debug_matrix/A_skew_4x4.mtx	debug_matrix/b_4.mtx	4	4	1.7977e-05	2000	1	1
+debug_matrix/A_eye_10x10.mtx	debug_matrix/b_10.mtx	10	10	3.3984e-05	4	0	0
+debug_matrix/A_jgl009.mtx	debug_matrix/b_jgl009.mtx	5	7	4.412e-05	4	8.87633e-15	0
+debug_matrix/A_singular.mtx	debug_matrix/b_jgl009.mtx	5	8	0.00057138	2000	1	1
+debug_matrix/A_permute.mtx	debug_matrix/b_jgl009.mtx	5	25	9.2277e-05	8	4.93224e-13	0
+debug_matrix/A_ones.mtx	debug_matrix/b_jgl009.mtx	5	25	2.6781e-05	2000	1	1
+debug_matrix/A_almost_singular.mtx	debug_matrix/b_2.mtx	2	4	2.7243e-05	2	0	0

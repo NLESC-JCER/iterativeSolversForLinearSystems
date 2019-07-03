@@ -1,0 +1,13 @@
+debug_matrix/A_complex.mtx
+debug_matrix/A_identity.mtx
+debug_matrix/A_anti_diag.mtx
+debug_matrix/A_skew.mtx
+debug_matrix/A_eye_2x2.mtx
+debug_matrix/A_skew_2x2.mtx
+debug_matrix/A_skew_4x4.mtx
+debug_matrix/A_eye_10x10.mtx
+debug_matrix/A_jgl009.mtx
+debug_matrix/A_singular.mtx
+debug_matrix/A_permute.mtx
+debug_matrix/A_ones.mtx
+debug_matrix/A_almost_singular.mtx
