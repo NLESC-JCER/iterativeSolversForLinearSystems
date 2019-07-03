@@ -1,0 +1,16 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "/home/chris/Documents/Repos/bicgstab_l/eigen_test_folder/test/is_same_dense.cpp"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"BuildOfficial"
+		],
+		"name" : "is_same_dense"
+	}
+}

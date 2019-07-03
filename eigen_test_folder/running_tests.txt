@@ -1,0 +1,42 @@
+#
+# Setting up the entire repository/eigen
+# Originally cloned from https://bitbucket.org/eigen/eigen/src/default/
+#
+
+mkdir build
+cd build
+#http://eigen.tuxfamily.org/bz/show_bug.cgi?id=967
+cmake ../ -G 'Unix Makefiles' -DEIGEN_BUILD_STRING_SUFFIX=cxx11 -DEIGEN_TEST_CUSTOM_CXX_FLAGS=-std=c++11
+make check -j 18
+make check TEST='bicgstab'
+
+#
+# Modifications to original eigen repository needed to add bicgstabell
+#
+
+In test directory:
+CMakeLists.txt 
+ei_add_test(bicgstabell) 
+
+Added file bicgstabell.cpp, modified that it can do the bicgstab tests for bicgstabell
+added bigstabell.h into Eigen/IterativeLinearSolvers by adding
+#include "src/IterativeLinearSolvers/bicgstabell.h"
+added bicgstabell.h in directory src/IterativeLinearSolvers/
+
+make check TEST='bicgstabell'
+
+#https://eigen.tuxfamily.org/index.php?title=Tests#Working_on_one_specific_test
+
+#
+# Compile and run the tests that are only related to bicgstab/bicgstabell
+#
+
+make bicgstab
+test/bicgstab_1
+test/bicgstab_2
+test/bicgstab_3
+
+make bicgstabell
+test/bicgstabell_1
+test/bicgstabell_2
+test/bicgstabell_3
