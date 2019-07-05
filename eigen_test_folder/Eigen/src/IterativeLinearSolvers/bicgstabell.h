@@ -52,12 +52,12 @@
 #define BICGSTABL_IN_LIBRARY 1 //1 is needed to have bicgstab(L) compile with Eigen, as part of the library for the unit tests. 0 to have it as a plugin for the test suite and in Plasimo.
 //TODO: Figure out a better fix.
 
-#define BICGSTABL_REL_UPDATE 1	//0=no reliable update strategy, 1=reliable update strategy
+#define BICGSTABL_REL_UPDATE 1	//0: no reliable update strategy, 1: reliable update strategy
 #define BICGSTABL_ALGORITHM 0   //0: original, 1: Householder QR, 2: Convex polynomial method
 #define BICGSTABL_PRECOND 1 	//0: right, 1: left. 0 may be broken, 1 is checked against Fortrain implementation of Enhanced bicgstabl
 /*
-Technically it is possible to change these strategies at runtime, however this would also require the user (or some sort of automated criterion) to know why and when certain methods are best.
-Currently this is done via defines to eliminate any possible contamination between the methods.
+        Technically it is possible to change these strategies at runtime, however this would also require the user (or some sort of automated criterion) to know why and when certain methods are best.
+        Currently this is done via defines to eliminate any possible contamination between the methods.
 */
 #define BICGSTABL_DEBUG_INFO 1 	//Print info to console about the problem being solved.
 
@@ -104,9 +104,6 @@ namespace Eigen
 			//rShadow is arbritary, but must not be orthogonal to r0.
 			VectorType rShadow = r0;
 
-			//RealScalar rShadow_sqnorm = rShadow.squaredNorm();
-			//RealScalar rhs_sqnorm = rhs.squaredNorm();
-
 			VectorType x_prime = x;
 			x.setZero();
 			VectorType b_prime = r0;
@@ -116,16 +113,12 @@ namespace Eigen
 			Scalar alpha = 0.0;
 			Scalar omega = 1.0;
 
-			//RealScalar tol2 = tol * tol * rShadow_sqnorm;
-			//RealScalar eps2 = NumTraits<Scalar>::epsilon() * NumTraits<Scalar>::epsilon();
-
 			DenseMatrixType rHat(N, L + 1);
 			DenseMatrixType uHat(N, L + 1);
 
 			rHat.col(0) = r0;
 			uHat.col(0).fill(0.0);
 
-			//Index restarts = 0;
 			bool bicg_convergence = false;
 
 			RealScalar zeta0 = r0.norm();
@@ -148,37 +141,6 @@ namespace Eigen
 				for (Index j = 0; j <= L - 1; ++j)
 				{
 					Scalar rho1 = rShadow.dot(rHat.col(j));
-
-					// if (abs(rho1) < eps2 * rShadow_sqnorm)
-					// {
-					// 	// The new residual vector became too orthogonal to the arbitrarily chosen direction rShadow
-					// 	// Let's restart with a new rShadow
-					// 	std::cout << "Orthogonality reset triggered" << std::endl;
-
-					// 	if (k != 0)
-					// 	{
-					// 		//Choose a new rShadow based on the current solution
-					// 		r0  = precond.solve(rhs - mat * x);
-					// 		rShadow = r0;
-					// 		rho1 = rShadow_sqnorm = rShadow.squaredNorm();
-					// 		rHat.col(0) = r0;
-					// 		uHat.col(0).fill(0.0);
-					// 	}
-					// 	else
-					// 	{
-					// 		//During the first iteration there is no reason to reset, as nothing would change.
-					// 		//Might as well try with a random rShadow instead, as it will be very unlikely to be orthogonal to any vector.
-					// 		rShadow.setRandom();
-					// 	}
-
-					// 	if (restarts++ == 0)
-					// 	{
-					// 		k = 0;
-					// 	}
-
-					// 	reset = true;
-					// 	break;
-					// }
 
 					if (rho1 - rho1 != 0.0 || rho0 == 0.0)
 					{
@@ -308,9 +270,6 @@ namespace Eigen
 				if (bicg_convergence == false) //(L == 1)
 				{
 					/*
-						//TODO: Compare this with the Fortran code step by step in the Enhanced bicgstabL paper, before any hard conclusions are drawn about this section.
-					*/
-					/*
 						The polynomial/minimize residual step.
 
 						QR Householder method for argmin is more stable than (modified) Gram-Schmidt, in the sense that there is less loss of orthogonality.
@@ -319,11 +278,20 @@ namespace Eigen
 						This method can also be used if L>1,  however the paper of Fokkema recommends the convex combination method to maintain convergence.
 					*/
 					VectorType gamma(L);
-					// gamma = ((rHat.block(0, 1, N, L)).adjoint() * (rHat.block(0, 1, N,
-					// 				L))).llt().solve((rHat.block(0, 1, N, L)).adjoint() * rHat.col(0));
 
-					// DenseMatrixType Z(L, L);
+					/*
+						An alternative method for solving the least-squares problem that arises in the minimize residual step is via the normal equations.
+						Eventhough this is faster, the resulting system that is solved generally is much worsely conditioned than via QR methods.
 
+						For the QR decomposition via Householder transformation it is possible to perform pivoting, however based on numerical experiment and
+						https://eigen.tuxfamily.org/dox/group__DenseDecompositionBenchmark.html. The computational cost of pivoting methods was deemed not worth.
+					*/
+
+					/*
+						Normal equations approach:
+						Z is Hermitian, to save several dotproducts only a triangular part of Z has to be computed.
+					*/
+					//Z = rHat.adjoint() * rHat;
 					// for (Index i = 0; i < L; ++i)
 					// {
 					// 	for (Index j = 0; j <= i; ++j)
@@ -333,15 +301,22 @@ namespace Eigen
 					// 	}
 
 					// }
-
 					//Z = (Z.template selfadjointView<Eigen::Lower>());
 
 					//gamma = Z.llt().solve(Z.col(0));
 					//gamma = Z.llt().solve(rHat.block(0, 1, N, L).adjoint() * rHat.col(0));
+
+					/*
+						Householder approach:
+					*/
 					gamma = (rHat.block(0, 1, N, L)).householderQr().solve(rHat.col(0));
+
+					//Update x, residuals and search directions
 					x += rHat.block(0, 0, N, L) * gamma;
 					rHat.col(0) -= rHat.block(0, 1, N, L) * gamma;
 					uHat.col(0) -= uHat.block(0, 1, N, L) * gamma;
+
+					//Calculate residual and omega for the next iteration
 					zeta = rHat.col(0).norm();
 					omega = gamma(L - 1);
 				}
@@ -350,7 +325,7 @@ namespace Eigen
 
 				if (L != 1 && bicg_convergence == false) //else
 				{
-					//TODO: ADD case for L==1, refer to householder method, or analyitical bicgstab method
+					//TODO: ADD case for L==1, refer to householder method, or analytical method used in BiCGStab
 					/*
 					        Convex combination step
 
@@ -359,7 +334,9 @@ namespace Eigen
 					*/
 					DenseMatrixType Z(L + 1, L + 1);
 
+					//TODO: There should exist a way to perform the convex combination efficiently without solving the normal equations, but using HouseholderQR instead.
 					//Z = rHat.adjoint() * rHat;
+					//Z is Hermitian, to save several dotproducts only a triangular part of Z has to be computed.
 					for (Index i = 0; i <= L; ++i)
 					{
 						for (Index j = 0; j <= i; ++j)
@@ -370,13 +347,10 @@ namespace Eigen
 
 					}
 
-					// //Z is Hermitian, therefore only one half has to be computed, the other half can be filled in, saving several DOTs.
 					Z = (Z.template selfadjointView<Eigen::Lower>());
-					DenseMatrixType Z0 = Z.block(1, 1, L - 1,
-							L - 1); //Copy to ensure there is no in place decomposition taking place
-					//Z = (rHat.block(0, 1, N, L)).transpose() * rHat.block(0, 1, N, L);
-					//Z = rHat.adjoint() * rHat;
-					//TODO: strictly upper/lower doesnt work, so this is performing some unneeded work.
+					//TODO: strictly upper/lower does not work, so this is performing some unneeded work.
+					DenseMatrixType Z0 = Z.block(1, 1, L - 1, L - 1);
+					//Copy to ensure there is no in place decomposition taking place (strictly speaking an unneeded step)
 
 					//Determine the coefficients for the polynomials.
 					VectorType y0(L + 1);
@@ -391,9 +365,6 @@ namespace Eigen
 					LLT<DenseMatrixType> lu_decomposition(Z0);
 					y0.block(1, 0, L - 1, 1) = lu_decomposition.solve(Z.block(1, 0, L - 1, 1));
 					yL.block(1, 0, L - 1, 1) = lu_decomposition.solve(Z.block(1, L, L - 1, 1));
-
-					//y0.block(1, 0, L - 1, 1) =
-					//yL.block(1, 0, L - 1, 1) = //Dit toch gwn met householder doen ipv normal eqns
 
 					Scalar kappa0 = y0.adjoint() * (Z * y0);
 					Scalar kappaL = yL.adjoint() * (Z * yL);
@@ -451,7 +422,6 @@ namespace Eigen
 				//TODO: Duplicate update code can be removed for the L=1 and L!=1 case.
 				//TODO: Use analytical expression instead of householder for L=1.
 				k += L;
-				//k += 1;
 
 				/*
 					Reliable update part
@@ -524,9 +494,6 @@ namespace Eigen
 			x = precond.solve(x);
 			#endif
 			tol_error = zeta / zeta0;
-			//tol_error = zeta;
-			//tol_error = sqrt(rHat.col(0).squaredNorm() / rhs_sqnorm);
-			//tol_error = (mat * x - rhs).norm() / rhs.norm();
 			iters = k;
 
 			#if BICGSTABL_DEBUG_INFO
@@ -623,29 +590,26 @@ namespace Eigen
 				std::cout << "Base::m_tolerance: " << Base::m_tolerance << std::endl;
 				#endif
 
+				//Process the error/succescode into m_info
 				if (ret == false)
 				{
+					//The solver has failed
 					m_info = NumericalIssue;
-					x.setZero(); //x=nan does not pass Eigen's tests even if m_info=NumericalIssue :)
-					m_error = ((std::isfinite)(m_error) ? m_error : 1.0);
+					x.setZero(); //x=nan does not pass Eigen's tests even if m_info=NumericalIssue apparantly
+					m_error = ((std::isfinite)(m_error) ? m_error :
+							1.0); //TODO: This may not be needed, depends on what exactly the tests demand.
 				}
 				else
 				{
+					//The solver succeeded
 					m_info = (m_error <= Base::m_tolerance) ? Success
 						: NoConvergence;
 				}
 
-				// m_info = (!ret) ? NumericalIssue
-				// 	: m_error <= Base::m_tolerance ? Success
-				// 	: NoConvergence;
-				//m_info=NumericalIssue;
 				#if BICGSTABL_DEBUG_INFO
 				std::cout << "m_error_returned: " << m_error << std::endl;
 				std::cout << "m_info: " << m_info << std::endl;
 				#endif
-				// m_info = (!ret) ? NumericalIssue
-				// 	: m_error <= Base::m_tolerance ? Success
-				// 	: NoConvergence;
 				m_isInitialized = true;
 			}
 
