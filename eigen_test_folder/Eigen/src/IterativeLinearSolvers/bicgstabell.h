@@ -53,13 +53,13 @@
 //TODO: Figure out a better fix.
 
 #define BICGSTABL_REL_UPDATE 1	//0: no reliable update strategy, 1: reliable update strategy
-#define BICGSTABL_ALGORITHM 0   //0: original, 1: Householder QR, 2: Convex polynomial method
+#define BICGSTABL_ALGORITHM 2   //0: original, 1: Householder QR, 2: Convex polynomial method
 #define BICGSTABL_PRECOND 1 	//0: right, 1: left. 0 may be broken, 1 is checked against Fortrain implementation of Enhanced bicgstabl
 /*
         Technically it is possible to change these strategies at runtime, however this would also require the user (or some sort of automated criterion) to know why and when certain methods are best.
         Currently this is done via defines to eliminate any possible contamination between the methods.
 */
-#define BICGSTABL_DEBUG_INFO 1 	//Print info to console about the problem being solved.
+#define BICGSTABL_DEBUG_INFO 0 	//Print info to console about the problem being solved.
 
 #if BICGSTABL_DEBUG_INFO
 #include <chrono>
@@ -104,6 +104,11 @@ namespace Eigen
 			//rShadow is arbritary, but must not be orthogonal to r0.
 			VectorType rShadow = r0;
 
+			// if (x(0)-x(0)!=0.0){
+			// 	//The intial guess can be nan
+			// 	std::cout << "THE INTIIAL GUESS WAS NAN" << std::endl;
+			// 	x.setZero();
+			// }
 			VectorType x_prime = x;
 			x.setZero();
 			VectorType b_prime = r0;
@@ -126,10 +131,20 @@ namespace Eigen
 			RealScalar Mx = zeta0;
 			RealScalar Mr = zeta0;
 
+			if(rhs.squaredNorm() == 0)
+			{
+				x.setZero();
+				return true;
+			}
+
 			const RealScalar delta = 0.01;
 
 			bool compute_res = false;
 			bool update_app = false;
+			RealScalar eps2 = NumTraits<Scalar>::epsilon()*NumTraits<Scalar>::epsilon();
+
+			Index restarts=0;
+			bool reset_while=0;
 
 			//Bool to signal that a new rShadow was chosen and the main loop should be restarted.
 			//bool reset = false;
@@ -141,6 +156,21 @@ namespace Eigen
 				for (Index j = 0; j <= L - 1; ++j)
 				{
 					Scalar rho1 = rShadow.dot(rHat.col(j));
+
+					if (abs(rho1) < eps2*zeta0)
+					{
+						// The new residual vector became too orthogonal to the arbitrarily chosen direction r0
+						// Let's restart with a new r0:
+						rShadow  = rhs - mat * x;
+						rHat.col(0) = rShadow;
+						rho0 = zeta0 = rShadow.norm();
+						if(restarts++ == 0)
+						{
+							//k = 0;
+							reset_while=true;
+							break;
+						}
+					}
 
 					if (rho1 - rho1 != 0.0 || rho0 == 0.0)
 					{
@@ -169,7 +199,7 @@ namespace Eigen
 					//Update residuals
 					for (Index i = 0; i <= j; ++i)
 					{
-						rHat.col(i) = rHat.col(i) - alpha * uHat.col(i + 1);
+						rHat.col(i) -= alpha * uHat.col(i + 1);
 					}
 
 					#if BICGSTABL_PRECOND==0
@@ -179,7 +209,7 @@ namespace Eigen
 					#endif
 
 					//Complete BiCG iteration by updating x
-					x = x + alpha * uHat.col(0);
+					x += alpha * uHat.col(0);
 
 					//Check for early exit
 					zeta = rHat.col(0).norm();
@@ -194,6 +224,11 @@ namespace Eigen
 						bicg_convergence = true;
 						break;
 					}
+				}
+				if(reset_while)
+				{
+					reset_while=false;
+					continue;
 				}
 
 				#if BICGSTABL_ALGORITHM==0
@@ -309,7 +344,7 @@ namespace Eigen
 					/*
 						Householder approach:
 					*/
-					gamma = (rHat.block(0, 1, N, L)).householderQr().solve(rHat.col(0));
+					gamma = (rHat.block(0, 1, N, L)).colPivHouseholderQr().solve(rHat.col(0));
 
 					//Update x, residuals and search directions
 					x += rHat.block(0, 0, N, L) * gamma;
@@ -471,7 +506,7 @@ namespace Eigen
 					if (update_app)
 					{
 						//After the group wise update, the original problem is translated to a shifted one.
-						x_prime = x_prime + x;
+						x_prime += x;
 						x.setZero();
 						b_prime = rHat.col(0);
 						Mx = zeta;
@@ -483,13 +518,12 @@ namespace Eigen
 				update_app = false;
 				#endif
 				#if BICGSTABL_DEBUG_INFO
-				std::cout << "k: " << k << "res:" << zeta / zeta0 <<
-					std::endl;
+				//std::cout << "k: " << k << "res:" << zeta / zeta0 <<std::endl;
 				#endif
 			}
 
 			//Convert internal variable to the true solution vector x
-			x = x_prime + x;
+			x += x_prime;
 			#if BICGSTABL_PRECOND==0
 			x = precond.solve(x);
 			#endif
@@ -582,6 +616,16 @@ namespace Eigen
 				m_iterations = Base::maxIterations();
 				m_error = Base::m_tolerance;
 
+				typedef Matrix<Scalar, Dynamic, 1> VectorType;
+				// VectorType x0=x;
+				// x0.setRandom();
+				// x0=x0+x;
+				// //x.setZero();
+				// std::cout << "x:\n" << std::endl;
+				// std::cout << x << std::endl;
+				// std::cout << "x0:\n" << std::endl;
+				// std::cout << x0 << std::endl;
+
 				bool ret = internal::bicgstabell(matrix(), b, x, Base::m_preconditioner, m_iterations, m_error,
 						m_L);
 				#if BICGSTABL_DEBUG_INFO
@@ -590,25 +634,45 @@ namespace Eigen
 				std::cout << "Base::m_tolerance: " << Base::m_tolerance << std::endl;
 				#endif
 
-				//Process the error/succescode into m_info
-				if (ret == false)
-				{
-					//The solver has failed
-					m_info = NumericalIssue;
-					x.setZero(); //x=nan does not pass Eigen's tests even if m_info=NumericalIssue apparantly
-					m_error = ((std::isfinite)(m_error) ? m_error :
-							1.0); //TODO: This may not be needed, depends on what exactly the tests demand.
-				}
-				else
-				{
-					//The solver succeeded
-					m_info = (m_error <= Base::m_tolerance) ? Success
-						: NoConvergence;
-				}
+				// //Process the error/succescode into m_info
+				// if(ret == false)
+				// {
+				// 	//The solver has failed
+				// 	m_info = NumericalIssue;
+				// 	x.setZero(); //x=nan does not pass Eigen's tests even if m_info=NumericalIssue apparantly
+				// 	m_error = ((std::isfinite)(m_error) ? m_error :
+				// 			1.0); //TODO: This may not be needed, depends on what exactly the tests demand.
+				// }
+				// else
+				// {
+				// 	//The solver succeeded
+				// 	m_info = (m_error <= Base::m_tolerance) ? Success
+				// 		: NoConvergence;
+				// }
+				m_error = ((std::isfinite)(m_error) ? m_error : 1.0);
+				m_info = (!ret) ? NumericalIssue
+					: m_error <= Base::m_tolerance ? Success
+					: NoConvergence;
 
 				#if BICGSTABL_DEBUG_INFO
 				std::cout << "m_error_returned: " << m_error << std::endl;
 				std::cout << "m_info: " << m_info << std::endl;
+				#endif
+				#if BICGSTABL_DEBUG_INFO
+				if(m_info != Success){
+
+					std::cout << "x:\n" << std::endl;
+					std::cout << x << std::endl;
+					// std::cout << "x0:\n" << std::endl;
+					// std::cout << x0 << std::endl;
+					std::cout << "b:\n" << std::endl;
+					std::cout << b << std::endl;
+					std::cout << "matrix():\n" << std::endl;
+					std::cout << matrix() << std::endl;
+
+					//Horribly break the program if the solver does not converge
+					*(char *)0 = 0;
+				}
 				#endif
 				m_isInitialized = true;
 			}

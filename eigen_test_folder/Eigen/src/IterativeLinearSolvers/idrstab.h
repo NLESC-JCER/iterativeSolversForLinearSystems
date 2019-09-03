@@ -86,7 +86,7 @@ namespace Eigen
 			*/
 			//Set up the initial residual
 			r.block(0, 0, N, 1) = rhs - mat * precond.solve(x);
-			tol_error = r.block(0, 0, N, 1).norm();
+			tol_error = r.head(N).norm();
 
 			/*
 				Select an initial (N x S) matrix R0
@@ -137,9 +137,10 @@ namespace Eigen
 			//Pre-allocate sigma, this space will be recycled without additional allocations.
 			//Also construct a LU-decomposition object beforehand.
 			DenseMatrixTypeCol sigma(S, S);
-			PartialPivLU<DenseMatrixTypeCol> lu_sigma;
+			FullPivLU<DenseMatrixTypeCol> lu_sigma;
 
-			while (tol_error > tol * rhs_norm && k < maxIters)
+			//while (tol_error > tol * rhs_norm && k < maxIters)
+			while (k < maxIters)
 			{
 
 				for (Index j = 1; j <= L; ++j)
@@ -222,10 +223,10 @@ namespace Eigen
 						}
 
 						//Normalize u and assign to a column of V
-						//u.head(Nj_plus_1) /= u.block(Nj, 0, N, 1).norm();
-						//V.block(0, q - 1, Nj_plus_1, 1) = u.head(Nj_plus_1);
+						u.head(Nj_plus_1) /= u.block(Nj, 0, N, 1).norm();
+						V.block(0, q - 1, Nj_plus_1, 1) = u.head(Nj_plus_1);
 						//Since the segment u.head(Nj_plus_1) is not needed next q-iteration this can be combined into:
-						V.block(0, q - 1, Nj_plus_1, 1).noalias() = u.head(Nj_plus_1) / u.block(Nj, 0, N, 1).norm();
+						//V.block(0, q - 1, Nj_plus_1, 1).noalias() = u.head(Nj_plus_1) / u.block(Nj, 0, N, 1).norm();
 
 						#if IDRSTAB_DEBUG_INFO
 						std::cout << "New u should be orthonormal to the columns of V" << std::endl;
@@ -254,7 +255,7 @@ namespace Eigen
 				/*
 					The polynomial step
 				*/
-				gamma.noalias() = rHat.rightCols(L).householderQr().solve(r.head(N)); //Argmin step
+				gamma.noalias() = rHat.rightCols(L).fullPivHouseholderQr().solve(r.head(N)); //Argmin step
 
 				//Update solution and residual using the "minimized residual coefficients"
 				update.noalias() = rHat.leftCols(L) * gamma;
@@ -264,11 +265,22 @@ namespace Eigen
 				//Update iteration info
 				++k;
 				tol_error = r.head(N).norm();
+
+				#if IDRSTAB_DEBUG_INFO
+				std::cout << "\nResidual: " << std::endl;
+				std::cout << tol_error / rhs_norm << std::endl;
+				std::cout << "True error:      " << (rhs - mat * precond.solve(x)).norm() / rhs.norm()<< std::endl;
+				std::cout << "Iter" << std::endl;
+				std::cout << k << std::endl;
+				#endif
+
 				if (tol_error < tol * rhs_norm)
 				{
 					//Slightly early exit by moving the criterion before the update of U,
 					//after the main while loop the result of that calculation would not be needed.
-					break;
+					iters = k;
+					x = precond.solve(x);
+					return true;
 				}
 
 				/*
@@ -287,12 +299,6 @@ namespace Eigen
 					U.topRows(N) -= Umatrix;
 				}
 
-				#if IDRSTAB_DEBUG_INFO
-				std::cout << "\nResidual: " << std::endl;
-				std::cout << r.block(0, 0, N, 1).norm() / rhs_norm << std::endl;
-				std::cout << "Iter" << std::endl;
-				std::cout << k << std::endl;
-				#endif
 			}
 
 			iters = k;
@@ -380,23 +386,24 @@ namespace Eigen
 				std::cout << "ret: " << ret << std::endl;
 				std::cout << "m_error: " << m_error << std::endl;
 				std::cout << "Base::m_tolerance: " << Base::m_tolerance << std::endl;
+				std::cout << "True error:      " << (matrix() * x - b).norm() / b.norm()<< std::endl;
 				#endif
 
-				if (ret == false)
-				{
-					m_info = NumericalIssue;
-					x.setZero(); //x=nan does not pass Eigen's tests even if m_info=NumericalIssue :)
-					m_error = ((std::isfinite)(m_error) ? m_error : 1.0);
-				}
-				else
-				{
-					m_info = (m_error <= Base::m_tolerance) ? Success
-						: NoConvergence;
-				}
+				// if (ret == false)
+				// {
+				// 	m_info = NumericalIssue;
+				// 	x.setZero(); //x=nan does not pass Eigen's tests even if m_info=NumericalIssue :)
+				// 	m_error = ((std::isfinite)(m_error) ? m_error : 1.0);
+				// }
+				// else
+				// {
+				// 	m_info = (m_error <= Base::m_tolerance) ? Success
+				// 		: NoConvergence;
+				// }
 
-				// m_info = (!ret) ? NumericalIssue
-				// 	: m_error <= Base::m_tolerance ? Success
-				// 	: NoConvergence;
+				m_info = (!ret) ? NumericalIssue
+					: m_error <= Base::m_tolerance ? Success
+					: NoConvergence;
 				//m_info=NumericalIssue;
 				#if IDRSTAB_DEBUG_INFO
 				std::cout << "m_error_returned: " << m_error << std::endl;
