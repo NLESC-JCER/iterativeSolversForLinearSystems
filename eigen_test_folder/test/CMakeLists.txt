@@ -265,6 +265,7 @@ ei_add_test(conjugate_gradient)
 ei_add_test(incomplete_cholesky)
 ei_add_test(bicgstab)
 ei_add_test(bicgstabell)
+ei_add_test(idrstab)
 ei_add_test(lscg)
 ei_add_test(sparselu)
 ei_add_test(sparseqr)
@@ -388,18 +389,18 @@ if(EIGEN_TEST_CUDA)
 
 find_package(CUDA 5.0)
 if(CUDA_FOUND)
-  
+
   set(CUDA_PROPAGATE_HOST_FLAGS OFF)
-  if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang") 
+  if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
     set(CUDA_NVCC_FLAGS "-ccbin ${CMAKE_C_COMPILER}" CACHE STRING "nvcc flags" FORCE)
   endif()
   if(EIGEN_TEST_CUDA_CLANG)
    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 --cuda-gpu-arch=sm_30")
   endif()
   set(EIGEN_ADD_TEST_FILENAME_EXTENSION  "cu")
-  
+
   ei_add_test(gpu_basic)
-  
+
   unset(EIGEN_ADD_TEST_FILENAME_EXTENSION)
 
 endif(CUDA_FOUND)
@@ -414,8 +415,8 @@ if (EIGEN_TEST_HIP)
   set(HIP_PATH "/opt/rocm/hip" CACHE STRING "Path to the HIP installation.")
 
   if (EXISTS ${HIP_PATH})
-    
-    list(APPEND CMAKE_MODULE_PATH ${HIP_PATH}/cmake) 
+
+    list(APPEND CMAKE_MODULE_PATH ${HIP_PATH}/cmake)
 
     find_package(HIP REQUIRED)
     if (HIP_FOUND)
@@ -429,21 +430,21 @@ if (EIGEN_TEST_HIP)
 	set(EIGEN_ADD_TEST_FILENAME_EXTENSION  "cu")
 	ei_add_test(gpu_basic)
 	unset(EIGEN_ADD_TEST_FILENAME_EXTENSION)
-	
+
       elseif (${HIP_PLATFORM} STREQUAL "nvcc")
 	message(FATAL_ERROR "HIP_PLATFORM = nvcc is not supported within Eigen")
       else ()
 	message(FATAL_ERROR "Unknown HIP_PLATFORM = ${HIP_PLATFORM}")
       endif()
-      
+
     endif(HIP_FOUND)
-    
+
   else ()
 
     message(FATAL_ERROR "EIGEN_TEST_HIP is ON, but the specified HIP_PATH (${HIP_PATH}) does not exist")
-    
+
   endif()
-    
+
 endif(EIGEN_TEST_HIP)
 
 option(EIGEN_TEST_BUILD_DOCUMENTATION "Test building the doxygen documentation" OFF)

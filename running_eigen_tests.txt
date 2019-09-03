@@ -6,8 +6,8 @@ make check -j 18
 
 make check TEST='bicgstab'
 In test directory:
-CMakeLists.txt 
-ei_add_test(bicgstabell) 
+CMakeLists.txt
+ei_add_test(bicgstabell)
 
 Added file bicgstabell.cpp, modified that it can do the bicgstab tests for bicgstabell
 added bigstabell.h into Eigen/IterativeLinearSolvers by adding
@@ -27,3 +27,8 @@ make bicgstabell
 test/bicgstabell_1
 test/bicgstabell_2
 test/bicgstabell_3
+
+make idrstab
+test/idrstab_1
+test/idrstab_2
+test/idrstab_3
