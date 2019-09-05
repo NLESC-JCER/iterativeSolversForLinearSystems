@@ -61,7 +61,7 @@ void check_sparse_solving(Solver& solver, const typename Solver::MatrixType& A, 
     {
       std::cerr << "WARNING: sparse solver testing: solving failed (" << typeid(Solver).name() << ")\n";
       // dump call stack:
-      g_test_level++; 
+      g_test_level++;
       VERIFY(solver.info() == Success);
       g_test_level--;
       return;
@@ -74,7 +74,7 @@ void check_sparse_solving(Solver& solver, const typename Solver::MatrixType& A, 
     VERIFY(solver.info() == Success && "solving failed when using solve_with_guess API");
     VERIFY(oldb.isApprox(b) && "sparse solver testing: the rhs should not be modified!");
     VERIFY(x.isApprox(refX,test_precision<Scalar>()));
-    
+
     x.setZero();
     // test the analyze/factorize API
     solver.analyzePattern(A);
@@ -84,7 +84,7 @@ void check_sparse_solving(Solver& solver, const typename Solver::MatrixType& A, 
     VERIFY(solver.info() == Success && "solving failed when using analyzePattern/factorize API");
     VERIFY(oldb.isApprox(b) && "sparse solver testing: the rhs should not be modified!");
     VERIFY(x.isApprox(refX,test_precision<Scalar>()));
-    
+
     x.setZero();
     // test with Map
     MappedSparseMatrix<Scalar,Mat::Options,StorageIndex> Am(A.rows(), A.cols(), A.nonZeros(), const_cast<StorageIndex*>(A.outerIndexPtr()), const_cast<StorageIndex*>(A.innerIndexPtr()), const_cast<Scalar*>(A.valuePtr()));
@@ -99,7 +99,7 @@ void check_sparse_solving(Solver& solver, const typename Solver::MatrixType& A, 
     VERIFY(oldb.isApprox(bm) && "sparse solver testing: the rhs should not be modified!");
     VERIFY(xm.isApprox(refX,test_precision<Scalar>()));
   }
-  
+
   // if not too large, do some extra check:
   if(A.rows()<2000)
   {
@@ -150,7 +150,7 @@ void check_sparse_solving_real_cases(Solver& solver, const typename Solver::Matr
   typedef typename Solver::MatrixType Mat;
   typedef typename Mat::Scalar Scalar;
   typedef typename Mat::RealScalar RealScalar;
-  
+
   Rhs x(A.cols(), b.cols());
 
   solver.compute(A);
@@ -160,29 +160,29 @@ void check_sparse_solving_real_cases(Solver& solver, const typename Solver::Matr
     VERIFY(solver.info() == Success);
   }
   x = solver.solve(b);
-  
+
   if (solver.info() != Success)
   {
     std::cerr << "WARNING | sparse solver testing, solving failed (" << typeid(Solver).name() << ")\n";
     return;
   }
-  
-  RealScalar res_error = (fullA*x-b).norm()/b.norm();  
-  VERIFY( (res_error <= test_precision<Scalar>() ) && "sparse solver failed without noticing it"); 
 
-  
+  RealScalar res_error = (fullA*x-b).norm()/b.norm();
+  VERIFY( (res_error <= test_precision<Scalar>() ) && "sparse solver failed without noticing it");
+
+
   if(refX.size() != 0 && (refX - x).norm()/refX.norm() > test_precision<Scalar>())
   {
     std::cerr << "WARNING | found solution is different from the provided reference one\n";
   }
-  
+
 }
 template<typename Solver, typename DenseMat>
 void check_sparse_determinant(Solver& solver, const typename Solver::MatrixType& A, const DenseMat& dA)
 {
   typedef typename Solver::MatrixType Mat;
   typedef typename Mat::Scalar Scalar;
-  
+
   solver.compute(A);
   if (solver.info() != Success)
   {
@@ -199,7 +199,7 @@ void check_sparse_abs_determinant(Solver& solver, const typename Solver::MatrixT
   using std::abs;
   typedef typename Solver::MatrixType Mat;
   typedef typename Mat::Scalar Scalar;
-  
+
   solver.compute(A);
   if (solver.info() != Success)
   {
@@ -228,13 +228,13 @@ int generate_sparse_spd_problem(Solver& , typename Solver::MatrixType& A, typena
 
   A = M * M.adjoint();
   dA = dM * dM.adjoint();
-  
+
   halfA.resize(size,size);
   if(Solver::UpLo==(Lower|Upper))
     halfA = A;
   else
     halfA.template selfadjointView<Solver::UpLo>().rankUpdate(M);
-  
+
   return size;
 }
 
@@ -243,7 +243,7 @@ int generate_sparse_spd_problem(Solver& , typename Solver::MatrixType& A, typena
 template<typename Scalar>
 inline std::string get_matrixfolder()
 {
-  std::string mat_folder = TEST_REAL_CASES; 
+  std::string mat_folder = TEST_REAL_CASES;
   if( internal::is_same<Scalar, std::complex<float> >::value || internal::is_same<Scalar, std::complex<double> >::value )
     mat_folder  = mat_folder + static_cast<std::string>("/complex/");
   else
@@ -295,7 +295,7 @@ template<typename Solver> void check_sparse_spd_solving(Solver& solver, int maxS
     initSparse<Scalar>(density, dB, B, ForceNonZeroDiag);
     SpVec c = B.col(0);
     DenseVector dc = dB.col(0);
-  
+
     CALL_SUBTEST( check_sparse_solving(solver, A,     b,  dA, b)  );
     CALL_SUBTEST( check_sparse_solving(solver, halfA, b,  dA, b)  );
     CALL_SUBTEST( check_sparse_solving(solver, A,     dB, dA, dB) );
@@ -304,7 +304,7 @@ template<typename Solver> void check_sparse_spd_solving(Solver& solver, int maxS
     CALL_SUBTEST( check_sparse_solving(solver, halfA, B,  dA, dB) );
     CALL_SUBTEST( check_sparse_solving(solver, A,     c,  dA, dc) );
     CALL_SUBTEST( check_sparse_solving(solver, halfA, c,  dA, dc) );
-    
+
     // check only once
     if(i==0)
     {
@@ -312,8 +312,8 @@ template<typename Solver> void check_sparse_spd_solving(Solver& solver, int maxS
       check_sparse_solving(solver, A, b, dA, b);
     }
   }
-  
-  // First, get the folder 
+
+  // First, get the folder
 #ifdef TEST_REAL_CASES
   // Test real problems with double precision only
   if (internal::is_same<typename NumTraits<Scalar>::Real, double>::value)
@@ -334,7 +334,7 @@ template<typename Solver> void check_sparse_spd_solving(Solver& solver, int maxS
             halfA = A;
           else
             halfA.template selfadjointView<Solver::UpLo>() = A.template triangularView<Eigen::Lower>().twistedBy(pnull);
-          
+
           std::cout << "INFO | Testing " << sym_to_string(it.sym()) << "sparse problem " << it.matname()
                   << " (" << A.rows() << "x" << A.cols() << ") using " << typeid(Solver).name() << "..." << std::endl;
           CALL_SUBTEST( check_sparse_solving_real_cases(solver, A,     b, A, refX) );
@@ -365,7 +365,7 @@ template<typename Solver> void check_sparse_spd_determinant(Solver& solver)
   Mat A, halfA;
   DenseMatrix dA;
   generate_sparse_spd_problem(solver, A, halfA, dA, 30);
-  
+
   for (int i = 0; i < g_repeat; i++) {
     check_sparse_determinant(solver, A,     dA);
     check_sparse_determinant(solver, halfA, dA );
@@ -380,12 +380,12 @@ Index generate_sparse_square_problem(Solver&, typename Solver::MatrixType& A, De
 
   Index size = internal::random<int>(1,maxSize);
   double density = (std::max)(8./(size*size), 0.01);
-  
+
   A.resize(size,size);
   dA.resize(size,size);
 
   initSparse<Scalar>(density, dA, A, options);
-  
+
   return size;
 }
 
@@ -429,7 +429,7 @@ template<typename Solver> void check_sparse_square_solving(Solver& solver, int m
     CALL_SUBTEST(check_sparse_solving(solver, A, dB, dA, dB));
     CALL_SUBTEST(check_sparse_solving(solver, A, B,  dA, dB));
     CALL_SUBTEST(check_sparse_solving(solver, A, c,  dA, dc));
-    
+
     // check only once
     if(i==0)
     {
@@ -443,8 +443,8 @@ template<typename Solver> void check_sparse_square_solving(Solver& solver, int m
       VERIFY_IS_EQUAL(solver.info(), NumericalIssue);
     }
   }
-  
-  // First, get the folder 
+
+  // First, get the folder
 #ifdef TEST_REAL_CASES
   // Test real problems with double precision only
   if (internal::is_same<typename NumTraits<Scalar>::Real, double>::value)
@@ -482,20 +482,20 @@ template<typename Solver> void check_sparse_square_determinant(Solver& solver)
   typedef typename Solver::MatrixType Mat;
   typedef typename Mat::Scalar Scalar;
   typedef Matrix<Scalar,Dynamic,Dynamic> DenseMatrix;
-  
+
   for (int i = 0; i < g_repeat; i++) {
     // generate the problem
     Mat A;
     DenseMatrix dA;
-    
+
     int size = internal::random<int>(1,30);
     dA.setRandom(size,size);
-    
+
     dA = (dA.array().abs()<0.3).select(0,dA);
     dA.diagonal() = (dA.diagonal().array()==0).select(1,dA.diagonal());
     A = dA.sparseView();
     A.makeCompressed();
-  
+
     check_sparse_determinant(solver, A, dA);
   }
 }
@@ -525,7 +525,7 @@ void generate_sparse_leastsquare_problem(Solver&, typename Solver::MatrixType& A
   int rows = internal::random<int>(1,maxSize);
   int cols = internal::random<int>(1,rows);
   double density = (std::max)(8./(rows*cols), 0.01);
-  
+
   A.resize(rows,cols);
   dA.resize(rows,cols);
 
@@ -557,7 +557,7 @@ template<typename Solver> void check_sparse_leastsquare_solving(Solver& solver)
     check_sparse_solving(solver, A, b,  dA, b);
     check_sparse_solving(solver, A, dB, dA, dB);
     check_sparse_solving(solver, A, B,  dA, dB);
-    
+
     // check only once
     if(i==0)
     {

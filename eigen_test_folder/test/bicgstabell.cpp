@@ -12,19 +12,17 @@
 
 template<typename T, typename I_> void test_bicgstabell_T()
 {
-  BicgstabEll<SparseMatrix<T,0,I_>, DiagonalPreconditioner<T> >     bicgstabell_colmajor_diag;
-  BicgstabEll<SparseMatrix<T,0,I_>, IdentityPreconditioner    >     bicgstabell_colmajor_I;
-  BicgstabEll<SparseMatrix<T,0,I_>, IncompleteLUT<T,I_> >              bicgstabell_colmajor_ilut;
-  //BiCGSTAB<SparseMatrix<T>, SSORPreconditioner<T> >     bicgstab_colmajor_ssor;
+  BicgstabEll<SparseMatrix<T,0,I_>, DiagonalPreconditioner<T> > bicgstabell_colmajor_diag;
+  BicgstabEll<SparseMatrix<T,0,I_>, IdentityPreconditioner>     bicgstabell_colmajor_I;
+  BicgstabEll<SparseMatrix<T,0,I_>, IncompleteLUT<T,I_> >       bicgstabell_colmajor_ilut;
 
   bicgstabell_colmajor_diag.setTolerance(NumTraits<T>::epsilon()*4);
   bicgstabell_colmajor_I.setTolerance(NumTraits<T>::epsilon()*4);
   bicgstabell_colmajor_ilut.setTolerance(NumTraits<T>::epsilon()*4);
 
-  CALL_SUBTEST( check_sparse_square_solving(bicgstabell_colmajor_diag)  );
-  CALL_SUBTEST( check_sparse_square_solving(bicgstabell_colmajor_I)     );
-  CALL_SUBTEST( check_sparse_square_solving(bicgstabell_colmajor_ilut)     );
-  //CALL_SUBTEST( check_sparse_square_solving(bicgstab_colmajor_ssor)     );
+  CALL_SUBTEST( check_sparse_square_solving(bicgstabell_colmajor_diag));
+  CALL_SUBTEST( check_sparse_square_solving(bicgstabell_colmajor_I));
+  CALL_SUBTEST( check_sparse_square_solving(bicgstabell_colmajor_ilut));
 }
 
 EIGEN_DECLARE_TEST(bicgstabell)

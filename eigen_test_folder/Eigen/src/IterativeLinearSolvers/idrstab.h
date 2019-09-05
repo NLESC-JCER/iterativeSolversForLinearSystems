@@ -333,7 +333,7 @@ namespace Eigen
 			using Base::m_iterations;
 			using Base::m_info;
 			using Base::m_isInitialized;
-			Index m_L = 8;
+			Index m_L = 4;
 			Index m_S = 2;
 		public:
 			typedef _MatrixType MatrixType;
@@ -366,13 +366,13 @@ namespace Eigen
 			        1. Sets the tolerance and maxIterations
 			        2. Calls the function that has the core solver routine
 			*/
-			#if BICGSTABL_IN_LIBRARY==0
-			template<typename Rhs, typename Dest>
-			void _solve_with_guess_impl(const Rhs& b, Dest& x) const
-			{
-				_solve_vector_with_guess_impl(b, x);
-			}
-			#endif
+			// #if BICGSTABL_IN_LIBRARY==0
+			// template<typename Rhs, typename Dest>
+			// void _solve_with_guess_impl(const Rhs& b, Dest& x) const
+			// {
+			// 	_solve_vector_with_guess_impl(b, x);
+			// }
+			// #endif
 
 			template<typename Rhs, typename Dest>
 			void _solve_vector_with_guess_impl(const Rhs& b, Dest& x) const
@@ -412,23 +412,23 @@ namespace Eigen
 				// m_info = (!ret) ? NumericalIssue
 				// 	: m_error <= Base::m_tolerance ? Success
 				// 	: NoConvergence;
-				m_isInitialized = true;
+				//m_isInitialized = true;
 			}
 
 			/** \internal */
 			/** Resizes the x vector to match the dimension of b and sets the elements to zero*/
-			#if BICGSTABL_IN_LIBRARY==0
-			using Base::_solve_impl;
-			template<typename Rhs, typename Dest>
-			void _solve_impl(const MatrixBase<Rhs>& b, Dest& x) const
-			{
+			// #if BICGSTABL_IN_LIBRARY==0
+			// using Base::_solve_impl;
+			// template<typename Rhs, typename Dest>
+			// void _solve_impl(const MatrixBase<Rhs>& b, Dest& x) const
+			// {
 
-				x.resize(this->rows(), b.cols());
-				x.setZero();
+			// 	x.resize(this->rows(), b.cols());
+			// 	x.setZero();
 
-				_solve_with_guess_impl(b, x);
-			}
-			#endif
+			// 	_solve_with_guess_impl(b, x);
+			// }
+			// #endif
 			void setL(Index L)
 			{
 				if (L < 1)

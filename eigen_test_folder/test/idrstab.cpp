@@ -12,17 +12,17 @@
 
 template<typename T, typename I_> void test_idrstab_T()
 {
-  IDRStab<SparseMatrix<T,0,I_>, DiagonalPreconditioner<T> >     idrstab_colmajor_diag;
-  IDRStab<SparseMatrix<T,0,I_>, IdentityPreconditioner    >     idrstab_colmajor_I;
-  IDRStab<SparseMatrix<T,0,I_>, IncompleteLUT<T,I_> >              idrstab_colmajor_ilut;
+  IDRStab<SparseMatrix<T,0,I_>, DiagonalPreconditioner<T> > idrstab_colmajor_diag;
+  IDRStab<SparseMatrix<T,0,I_>, IdentityPreconditioner>     idrstab_colmajor_I;
+  IDRStab<SparseMatrix<T,0,I_>, IncompleteLUT<T,I_> >       idrstab_colmajor_ilut;
 
   idrstab_colmajor_diag.setTolerance(NumTraits<T>::epsilon()*4);
   idrstab_colmajor_I.setTolerance(NumTraits<T>::epsilon()*4);
   idrstab_colmajor_ilut.setTolerance(NumTraits<T>::epsilon()*4);
 
-  CALL_SUBTEST( check_sparse_square_solving(idrstab_colmajor_diag)  );
-  CALL_SUBTEST( check_sparse_square_solving(idrstab_colmajor_I)     );
-  CALL_SUBTEST( check_sparse_square_solving(idrstab_colmajor_ilut)     );
+  CALL_SUBTEST( check_sparse_square_solving(idrstab_colmajor_diag));
+  CALL_SUBTEST( check_sparse_square_solving(idrstab_colmajor_I));
+  CALL_SUBTEST( check_sparse_square_solving(idrstab_colmajor_ilut));
 }
 
 EIGEN_DECLARE_TEST(idrstab)
