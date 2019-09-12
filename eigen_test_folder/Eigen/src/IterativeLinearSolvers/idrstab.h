@@ -85,7 +85,7 @@ namespace Eigen
 				IDR(S)Stab(L) algorithm
 			*/
 			//Set up the initial residual
-			r.block(0, 0, N, 1) = rhs - mat * precond.solve(x);
+			r.head(N) = rhs - mat * precond.solve(x);
 			tol_error = r.head(N).norm();
 
 			/*
