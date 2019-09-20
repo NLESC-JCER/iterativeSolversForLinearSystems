@@ -30,7 +30,7 @@
 #include <Eigen/LU>
 #include <Eigen/Dense>
 
-#define IDRSTAB_DEBUG_INFO 0 	//Print info to console about the problem being solved.
+#define IDRSTAB_DEBUG_INFO 2 	//Print info to console about the problem being solved.
 
 #if IDRSTAB_DEBUG_INFO
 #include <chrono>
@@ -123,29 +123,29 @@ namespace Eigen
 					/*
 					        THIS IS DOING GS, NOT MGS
 									THE ORIGINAL VERSION IS DOING GS, NOT MGS OR HH!
-									//u.head(N) -= U.topLeftCorner(N, q) * (U.topLeftCorner(N, q).adjoint() * u.head(N));
+									u.head(N) -= U.topLeftCorner(N, q) * (U.topLeftCorner(N, q).adjoint() * u.head(N));
 					*/
 				  //u.head(N) -= U.topLeftCorner(N, q) * (U.topLeftCorner(N, q).adjoint() * u.head(N));
 					/*
 					MGS method:
 					*/
-					// VectorType w = mat * precond.solve(u.head(N));
-					// //VectorType v = u.head(N);
-					// for(Index i=0;i<q;++i)
-					// {
-					// 	VectorType v=U.block(0, i, N, 1);
-					// 	DenseMatrixTypeCol h=v.adjoint()*w;
-					// 	w=w-h(0,0) * v;
-					// }
-					// u.head(N)=w;
+					VectorType w = mat * precond.solve(u.head(N));
+					//VectorType v = u.head(N);
+					for(Index i=0;i<q;++i)
+					{
+						VectorType v=U.block(0, i, N, 1);
+						DenseMatrixTypeCol h=v.adjoint()*w;
+						w=w-h(0,0) * v;
+					}
+					u.head(N)=w;
 
 					/*
 					Attempt at doing same with householder
 					*/
-					VectorType w = mat * precond.solve(u.head(N));
-					//U.block(0, q-1, N, 1)=w;
-					HouseholderQR<DenseMatrixTypeCol> qrU(U.topLeftCorner(N, q));
-					u.head(N) = (qrU.householderQ() * w);
+					// VectorType w = mat * precond.solve(u.head(N));
+					// //U.block(0, q-1, N, 1)=w;
+					// HouseholderQR<DenseMatrixTypeCol> qrU(U.topLeftCorner(N, q));
+					// u.head(N) = (qrU.householderQ() * w);
 				}
 				else
 				{
@@ -249,47 +249,12 @@ namespace Eigen
 
 							//The same, but using MGS instead of GS!
 							//http://eigen.tuxfamily.org/bz/show_bug.cgi?id=1610 Scalar h is not supported
-							// for(Index i=0;i<=q-2;++i)
-							// {
-							// 	DenseMatrixTypeCol h=V.block(Nj, i, N, 1).adjoint() * u.segment(Nj, N);
-							// 	u.head(Nj_plus_1)=u.head(Nj_plus_1)-h(0,0)*V.block(0,i,Nj_plus_1, 1);
-							// 	//u.head(Nj_plus_1) /= u.segment(Nj, N).norm(); //NOT SURE
-							// 	//u.segment(Nj, N).norm()/=u.segment(Nj, N).norm()
-							// }
-							// VectorType w = mat * precond.solve(u.head(N));
-							// VectorType v = u.head(N);
-							// for(Index i=0;i<q;++i)
-							// {
-							// 	DenseMatrixTypeCol h=w.adjoint()*v;
-							// 	w=w-h(0,0) * v;
-							// }
-							// u.head(N)=w;
-							/*
-							VectorType w=u.segment(Nj, N);
-							VectorType v=u.head(Nj_plus_1);
-							for(Index i=0;i<=q-2;++i)
-							{
-								DenseMatrixTypeCol h2=V.block(Nj, i, N, 1).adjoint()*V.block(Nj, i, N, 1);
-								DenseMatrixTypeCol h=V.block(Nj, i, N, 1).adjoint() * w/h2(0,0);
-								v=v-h(0,0)*V.block(0,i,Nj_plus_1, 1);
-
-								//u.head(Nj_plus_1) /= u.segment(Nj, N).norm(); //NOT SURE
-								//u.segment(Nj, N).norm()/=u.segment(Nj, N).norm()
-							}
-							u.head(Nj_plus_1)=v;
-							*/
-							VectorType w=u.segment(Nj, N);
-							VectorType v=u.head(Nj_plus_1);
 							for(Index i=0;i<=q-2;++i)
 							{
 								DenseMatrixTypeCol h2=V.block(Nj, i, N, 1).adjoint()*V.block(Nj, i, N, 1);
 								DenseMatrixTypeCol h=V.block(Nj, i, N, 1).adjoint() * u.segment(Nj, N)/h2(0,0);
 								u.head(Nj_plus_1)=u.head(Nj_plus_1)-h(0,0)*V.block(0,i,Nj_plus_1, 1);
-
-								//u.head(Nj_plus_1) /= u.segment(Nj, N).norm(); //NOT SURE
-								//u.segment(Nj, N).norm()/=u.segment(Nj, N).norm()
 							}
-							//u.head(Nj_plus_1)=v;
 						}
 
 						//Normalize u and assign to a column of V
