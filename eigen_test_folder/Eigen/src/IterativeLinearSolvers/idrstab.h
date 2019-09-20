@@ -18,7 +18,7 @@
 		1. Aihara, K., Abe, K., & Ishiwata, E. (2014). A variant of IDRstab with reliable update strategies for solving sparse linear systems. Journal of Computational and Applied Mathematics, 259, 244-258. doi:10.1016/j.cam.2013.08.028
 		2. Aihara, K., Abe, K., & Ishiwata, E. (2015). Preconditioned IDRStab Algorithms for Solving Nonsymmetric Linear Systems. International Journal of Applied Mathematics, 45(3).
 
-	Special acknowledgement to Mischa Senders for his work on an initial reference implementation of this algorithm in MATLAB.
+	Special acknowledgement to Mischa Senders for his work on an initial reference implementation of this algorithm in MATLAB and to Adithya Vijaykumar for providing the framework for this solver.
 
 	Based on table 1 in ref 2, for L=2, S=4 left-preconditioning should be slightly less AXPY (71.5 compared to 67.5), however it is concluded in the paper that this difference is minimal in practice.
 */
@@ -26,11 +26,11 @@
 #ifndef idrstab_h
 #define idrstab_h
 
-#include <eigen3/Eigen/QR>
-#include <eigen3/Eigen/LU>
-#include <eigen3/Eigen/Dense>
+#include <Eigen/QR>
+#include <Eigen/LU>
+#include <Eigen/Dense>
 
-#define IDRSTAB_DEBUG_INFO 1 	//Print info to console about the problem being solved.
+#define IDRSTAB_DEBUG_INFO 0 	//Print info to console about the problem being solved.
 
 #if IDRSTAB_DEBUG_INFO
 #include <chrono>
@@ -46,8 +46,8 @@ namespace Eigen
 			const Preconditioner& precond, Index& iters,
 			typename Dest::RealScalar& tol_error, Index L, Index S)
 		{
-			#if IDRSTAB_DEBUG_INFO
-			//std::chrono::high_resolution_clock::time_point t1 = std::chrono::high_resolution_clock::now();
+			#if IDRSTAB_DEBUG_INFO >0
+			std::chrono::high_resolution_clock::time_point t1 = std::chrono::high_resolution_clock::now();
 			std::cout << "Matrix size: " << mat.rows() << std::endl;
 			#endif
 			/*
@@ -68,8 +68,14 @@ namespace Eigen
 			const Index maxIters = iters;
 
 			//PO: sqrNorm() saves 1 sqrt calculation
-			const RealScalar tol = tol_error;
 			const RealScalar rhs_norm = rhs.norm();
+			const RealScalar tol2 = tol_error * rhs_norm;
+
+			if (rhs_norm == 0)
+			{
+				x.setZero();
+				return true;
+			}
 
 			//Define maximum sizes to prevent any reallocation later on
 			VectorType u(N * (L + 1));
@@ -81,6 +87,7 @@ namespace Eigen
 			VectorType gamma(L);
 			VectorType update(N);
 
+			//VectorType h(1);
 			/*
 				IDR(S)Stab(L) algorithm
 			*/
@@ -95,13 +102,13 @@ namespace Eigen
 			//This results in R0, however to save memory and compute we only need the adjoint of R0
 			//PO: To save on memory consumption identity can be sparse
 			HouseholderQR<DenseMatrixTypeCol> qr(DenseMatrixTypeCol::Random(N, S));
-			const DenseMatrixTypeRow R_T = (qr.householderQ() * DenseMatrixTypeCol::Identity(N, S)).adjoint();
+			DenseMatrixTypeRow R_T = (qr.householderQ() * DenseMatrixTypeCol::Identity(N, S)).adjoint();
 
 			//Additionally, the matrix (mat.adjoint()*R_tilde).adjoint()=R_tilde.adjoint()*mat by the anti-distributivity property of the adjoint.
 			//This results in AR_T, which is constant and can be precomputed.
-			const DenseMatrixTypeRow AR_T = DenseMatrixTypeRow(R_T * mat);
+			DenseMatrixTypeRow AR_T = DenseMatrixTypeRow(R_T * mat);
 
-			#if IDRSTAB_DEBUG_INFO
+			#if IDRSTAB_DEBUG_INFO >1
 			std::cout << "Check orthonormality R_T\n" <<
 				R_T* R_T.adjoint() << std::endl;
 			#endif
@@ -113,8 +120,32 @@ namespace Eigen
 				//Arnoldi-like process to generate a set of orthogonal vectors spanning {u,A*u,A*A*u,...,A^(S-1)*u}.
 				if (q != 0)
 				{
-					u.head(N) = mat * precond.solve(u.head(N));
-					u.head(N) -= U.topLeftCorner(N, q) * (U.topLeftCorner(N, q).adjoint() * u.head(N));
+					/*
+					        THIS IS DOING GS, NOT MGS
+									THE ORIGINAL VERSION IS DOING GS, NOT MGS OR HH!
+									//u.head(N) -= U.topLeftCorner(N, q) * (U.topLeftCorner(N, q).adjoint() * u.head(N));
+					*/
+				  //u.head(N) -= U.topLeftCorner(N, q) * (U.topLeftCorner(N, q).adjoint() * u.head(N));
+					/*
+					MGS method:
+					*/
+					// VectorType w = mat * precond.solve(u.head(N));
+					// //VectorType v = u.head(N);
+					// for(Index i=0;i<q;++i)
+					// {
+					// 	VectorType v=U.block(0, i, N, 1);
+					// 	DenseMatrixTypeCol h=v.adjoint()*w;
+					// 	w=w-h(0,0) * v;
+					// }
+					// u.head(N)=w;
+
+					/*
+					Attempt at doing same with householder
+					*/
+					VectorType w = mat * precond.solve(u.head(N));
+					//U.block(0, q-1, N, 1)=w;
+					HouseholderQR<DenseMatrixTypeCol> qrU(U.topLeftCorner(N, q));
+					u.head(N) = (qrU.householderQ() * w);
 				}
 				else
 				{
@@ -125,21 +156,17 @@ namespace Eigen
 				U.block(0, q, N, 1) = u.head(N);
 			}
 
-			#if IDRSTAB_DEBUG_INFO
+			#if IDRSTAB_DEBUG_INFO >1
 			//Columns of U should be orthonormal
 			std::cout << "Check orthonormality U\n" <<
 				U.block(0, 0, N, S).adjoint()*U.block(0, 0, N, S) << std::endl;
 			#endif
-
-			//PO: Is there some way to avoid storing R_T and AR_T for left-preconditioning version of Ref. 2
-			//, while still keeping the performance benefit of the precompute?
 
 			//Pre-allocate sigma, this space will be recycled without additional allocations.
 			//Also construct a LU-decomposition object beforehand.
 			DenseMatrixTypeCol sigma(S, S);
 			FullPivLU<DenseMatrixTypeCol> lu_sigma;
 
-			//while (tol_error > tol * rhs_norm && k < maxIters)
 			while (k < maxIters)
 			{
 
@@ -155,8 +182,7 @@ namespace Eigen
 					*/
 
 					//Construction of the sigma-matrix, and the LU decomposition of sigma.
-					#pragma omp parallel for num_threads(S)
-					for (Index i = 0; i < S; i++)
+					for (Index i = 0; i < S; ++i)
 					{
 						sigma.col(i).noalias() = AR_T * precond.solve(U.block(Nj_min_1, i, N, 1));
 					}
@@ -166,7 +192,7 @@ namespace Eigen
 					if (j != 1)
 					{
 						//alpha=inverse(sigma)*(AR_T*r_{j-2})
-						alpha.noalias() = lu_sigma.solve(AR_T * precond.solve(r.block(N * (j - 2), 0, N, 1)));
+						alpha.noalias() = lu_sigma.solve(AR_T * precond.solve(r.segment(N * (j - 2), N)));
 					}
 					else
 					{
@@ -186,12 +212,12 @@ namespace Eigen
 					for (Index i = 1; i <= j - 2; ++i)
 					{
 						//This only affects the case L>2
-						r.block(N * i, 0, N, 1) -= U.block(N * (i + 1), 0, N, S) * alpha;
+						r.segment(N * i, N) -= U.block(N * (i + 1), 0, N, S) * alpha;
 					}
 					if (j > 1)
 					{
 						//r=[r;A*r_{j-2}]
-						r.block(Nj_min_1, 0, N, 1).noalias() = mat * precond.solve(r.block(N * (j - 2), 0, N, 1));
+						r.segment(Nj_min_1, N).noalias() = mat * precond.solve(r.segment(N * (j - 2), N));
 					}
 
 					for (Index q = 1; q <= S; ++q)
@@ -208,10 +234,10 @@ namespace Eigen
 						}
 						//Obtain the update coefficients beta implicitly
 						//beta=lu_sigma.solve(AR_T * u.block(Nj_min_1, 0, N, 1)
-						u.head(Nj) -=  U.topRows(Nj) * lu_sigma.solve(AR_T * precond.solve(u.block(Nj_min_1, 0, N, 1)));
+						u.head(Nj) -=  U.topRows(Nj) * lu_sigma.solve(AR_T * precond.solve(u.segment(Nj_min_1, N)));
 
 						//u=[u;Au_{j-1}]
-						u.block(Nj, 0, N, 1).noalias() = mat * precond.solve(u.block(Nj_min_1, 0, N, 1));
+						u.segment(Nj, N).noalias() = mat * precond.solve(u.segment(Nj_min_1, N));
 
 						//Orthonormalize u_j to the columns of V_j(:,1:q-1)
 						if (q > 1)
@@ -219,22 +245,66 @@ namespace Eigen
 							//Gram-Schmidt-like procedure to make u orthogonal to the columns of V.
 							//The vector mu from Ref. 1 is obtained implicitly:
 							//mu=V.block(Nj, 0, N, q - 1).adjoint() * u.block(Nj, 0, N, 1).
-							u.head(Nj_plus_1) -= V.topLeftCorner(Nj_plus_1, q - 1) * (V.block(Nj, 0, N, q - 1).adjoint() * u.block(Nj, 0, N, 1));
+							//u.head(Nj_plus_1) -= V.topLeftCorner(Nj_plus_1, q - 1) * (V.block(Nj, 0, N, q - 1).adjoint() * u.segment(Nj, N));
+
+							//The same, but using MGS instead of GS!
+							//http://eigen.tuxfamily.org/bz/show_bug.cgi?id=1610 Scalar h is not supported
+							// for(Index i=0;i<=q-2;++i)
+							// {
+							// 	DenseMatrixTypeCol h=V.block(Nj, i, N, 1).adjoint() * u.segment(Nj, N);
+							// 	u.head(Nj_plus_1)=u.head(Nj_plus_1)-h(0,0)*V.block(0,i,Nj_plus_1, 1);
+							// 	//u.head(Nj_plus_1) /= u.segment(Nj, N).norm(); //NOT SURE
+							// 	//u.segment(Nj, N).norm()/=u.segment(Nj, N).norm()
+							// }
+							// VectorType w = mat * precond.solve(u.head(N));
+							// VectorType v = u.head(N);
+							// for(Index i=0;i<q;++i)
+							// {
+							// 	DenseMatrixTypeCol h=w.adjoint()*v;
+							// 	w=w-h(0,0) * v;
+							// }
+							// u.head(N)=w;
+							/*
+							VectorType w=u.segment(Nj, N);
+							VectorType v=u.head(Nj_plus_1);
+							for(Index i=0;i<=q-2;++i)
+							{
+								DenseMatrixTypeCol h2=V.block(Nj, i, N, 1).adjoint()*V.block(Nj, i, N, 1);
+								DenseMatrixTypeCol h=V.block(Nj, i, N, 1).adjoint() * w/h2(0,0);
+								v=v-h(0,0)*V.block(0,i,Nj_plus_1, 1);
+
+								//u.head(Nj_plus_1) /= u.segment(Nj, N).norm(); //NOT SURE
+								//u.segment(Nj, N).norm()/=u.segment(Nj, N).norm()
+							}
+							u.head(Nj_plus_1)=v;
+							*/
+							VectorType w=u.segment(Nj, N);
+							VectorType v=u.head(Nj_plus_1);
+							for(Index i=0;i<=q-2;++i)
+							{
+								DenseMatrixTypeCol h2=V.block(Nj, i, N, 1).adjoint()*V.block(Nj, i, N, 1);
+								DenseMatrixTypeCol h=V.block(Nj, i, N, 1).adjoint() * u.segment(Nj, N)/h2(0,0);
+								u.head(Nj_plus_1)=u.head(Nj_plus_1)-h(0,0)*V.block(0,i,Nj_plus_1, 1);
+
+								//u.head(Nj_plus_1) /= u.segment(Nj, N).norm(); //NOT SURE
+								//u.segment(Nj, N).norm()/=u.segment(Nj, N).norm()
+							}
+							//u.head(Nj_plus_1)=v;
 						}
 
 						//Normalize u and assign to a column of V
 						u.head(Nj_plus_1) /= u.block(Nj, 0, N, 1).norm();
 						V.block(0, q - 1, Nj_plus_1, 1) = u.head(Nj_plus_1);
 						//Since the segment u.head(Nj_plus_1) is not needed next q-iteration this can be combined into:
-						//V.block(0, q - 1, Nj_plus_1, 1).noalias() = u.head(Nj_plus_1) / u.block(Nj, 0, N, 1).norm();
+						//V.block(0, q - 1, Nj_plus_1, 1).noalias() = u.head(Nj_plus_1) / u.segment(Nj, N).norm();
 
-						#if IDRSTAB_DEBUG_INFO
+						#if IDRSTAB_DEBUG_INFO >1
 						std::cout << "New u should be orthonormal to the columns of V" << std::endl;
 						std::cout << V.block(Nj, 0, N, q).adjoint()*u.block(Nj, 0, N, 1) << std::endl; //OK
 						#endif
 					}
 
-					#if IDRSTAB_DEBUG_INFO
+					#if IDRSTAB_DEBUG_INFO >1
 					//This should be identity, since the columns of V are orthonormalized
 					std::cout << "This should be identity matrix:" << std::endl;
 					std::cout << V.block(Nj, 0, N, S).adjoint()* V.block(Nj, 0, N, S) << std::endl;
@@ -246,10 +316,10 @@ namespace Eigen
 				//r=[r;mat*r_{L-1}]
 				//Save this in rHat, the storage form for rHat is more suitable for the argmin step than the way r is stored.
 				//In Eigen 3.4 this step can be compactly done via: rHat = r.reshaped(N, L + 1);
-				r.block(N * L, 0, N, 1).noalias() = mat * precond.solve(r.block(N * (L - 1), 0, N, 1));
+				r.segment(N * L, N).noalias() = mat * precond.solve(r.segment(N * (L - 1), N));
 				for (Index i = 1; i <= L + 1; ++i)
 				{
-					rHat.col(i - 1) = r.block(N * (i - 1), 0, N, 1);
+					rHat.col(i - 1) = r.segment(N * (i - 1), N);
 				}
 
 				/*
@@ -265,22 +335,11 @@ namespace Eigen
 				//Update iteration info
 				++k;
 				tol_error = r.head(N).norm();
-
-				#if IDRSTAB_DEBUG_INFO
-				std::cout << "\nResidual: " << std::endl;
-				std::cout << tol_error / rhs_norm << std::endl;
-				std::cout << "True error:      " << (rhs - mat * precond.solve(x)).norm() / rhs.norm()<< std::endl;
-				std::cout << "Iter" << std::endl;
-				std::cout << k << std::endl;
-				#endif
-
-				if (tol_error < tol * rhs_norm)
+				if (tol_error < tol2)
 				{
 					//Slightly early exit by moving the criterion before the update of U,
 					//after the main while loop the result of that calculation would not be needed.
-					iters = k;
-					x = precond.solve(x);
-					return true;
+					break;
 				}
 
 				/*
@@ -288,21 +347,27 @@ namespace Eigen
 					Consider the first iteration. Then U only contains U0, so at the start of the while-loop
 					U should be U0. Therefore only the first N rows of U have to be updated.
 				*/
-				//PO: Is there a way to do this without producing Umatrix?
-				#pragma omp parallel for num_threads(L)
 				for (Index i = 1; i <= L; ++i)
 				{
-					DenseMatrixTypeCol Umatrix(N, S);
-					Umatrix.noalias() = U.block(N * i, 0, N, S) * gamma(i - 1);
-
-					#pragma omp critical
-					U.topRows(N) -= Umatrix;
+					U.topRows(N) -= U.block(N * i, 0, N, S) * gamma(i - 1);
 				}
 
 			}
-
 			iters = k;
 			x = precond.solve(x);
+			tol_error = tol_error / rhs_norm;
+			#if IDRSTAB_DEBUG_INFO >0
+			//Print experimental info
+			std::chrono::high_resolution_clock::time_point t2 = std::chrono::high_resolution_clock::now();
+			std::chrono::duration<double> time_span = std::chrono::duration_cast<std::chrono::duration<double>>
+				(t2 - t1);
+			std::cout << "Solver time: " << time_span.count() << " seconds" << std::endl;
+			std::cout << "#iterations:     " << k << std::endl;
+			std::cout << "Estimated relative residual: " << tol_error << std::endl;
+			std::cout << "True relative residual:      " << (mat * x - rhs).norm() / rhs.norm() << std::endl;
+			// tol_error = (mat * x - rhs).norm() / rhs.norm();
+			#endif
+
 			return true;
 		}
 
@@ -333,8 +398,8 @@ namespace Eigen
 			using Base::m_iterations;
 			using Base::m_info;
 			using Base::m_isInitialized;
-			Index m_L = 4;
-			Index m_S = 2;
+			Index m_L = 2;
+			Index m_S = 4;
 		public:
 			typedef _MatrixType MatrixType;
 			typedef typename MatrixType::Scalar Scalar;
@@ -366,58 +431,11 @@ namespace Eigen
 			        1. Sets the tolerance and maxIterations
 			        2. Calls the function that has the core solver routine
 			*/
-			// #if BICGSTABL_IN_LIBRARY==0
 			// template<typename Rhs, typename Dest>
 			// void _solve_with_guess_impl(const Rhs& b, Dest& x) const
 			// {
 			// 	_solve_vector_with_guess_impl(b, x);
 			// }
-			// #endif
-
-			template<typename Rhs, typename Dest>
-			void _solve_vector_with_guess_impl(const Rhs& b, Dest& x) const
-			{
-				m_iterations = Base::maxIterations();
-				m_error = Base::m_tolerance;
-
-				bool ret = internal::idrstab(matrix(), b, x, Base::m_preconditioner, m_iterations, m_error,
-						m_L, m_S);
-				#if IDRSTAB_DEBUG_INFO
-				std::cout << "ret: " << ret << std::endl;
-				std::cout << "m_error: " << m_error << std::endl;
-				std::cout << "Base::m_tolerance: " << Base::m_tolerance << std::endl;
-				std::cout << "True error:      " << (matrix() * x - b).norm() / b.norm()<< std::endl;
-				#endif
-
-				// if (ret == false)
-				// {
-				// 	m_info = NumericalIssue;
-				// 	x.setZero(); //x=nan does not pass Eigen's tests even if m_info=NumericalIssue :)
-				// 	m_error = ((std::isfinite)(m_error) ? m_error : 1.0);
-				// }
-				// else
-				// {
-				// 	m_info = (m_error <= Base::m_tolerance) ? Success
-				// 		: NoConvergence;
-				// }
-
-				m_info = (!ret) ? NumericalIssue
-					: m_error <= Base::m_tolerance ? Success
-					: NoConvergence;
-				//m_info=NumericalIssue;
-				#if IDRSTAB_DEBUG_INFO
-				std::cout << "m_error_returned: " << m_error << std::endl;
-				std::cout << "m_info: " << m_info << std::endl;
-				#endif
-				// m_info = (!ret) ? NumericalIssue
-				// 	: m_error <= Base::m_tolerance ? Success
-				// 	: NoConvergence;
-				//m_isInitialized = true;
-			}
-
-			/** \internal */
-			/** Resizes the x vector to match the dimension of b and sets the elements to zero*/
-			// #if BICGSTABL_IN_LIBRARY==0
 			// using Base::_solve_impl;
 			// template<typename Rhs, typename Dest>
 			// void _solve_impl(const MatrixBase<Rhs>& b, Dest& x) const
@@ -428,7 +446,33 @@ namespace Eigen
 
 			// 	_solve_with_guess_impl(b, x);
 			// }
-			// #endif
+
+			template<typename Rhs, typename Dest>
+			void _solve_vector_with_guess_impl(const Rhs& b, Dest& x) const
+			{
+				m_iterations = Base::maxIterations();
+				m_error = Base::m_tolerance;
+
+				bool ret = internal::idrstab(matrix(), b, x, Base::m_preconditioner, m_iterations, m_error,
+						m_L, m_S);
+
+				m_info = (!ret) ? NumericalIssue
+					: m_error <= Base::m_tolerance ? Success
+					: NoConvergence;
+
+				#if IDRSTAB_DEBUG_INFO >0
+				//std::cout << "ret: " << ret << std::endl;
+				//std::cout << "m_error: " << m_error << std::endl;
+				//std::cout << "Base::m_tolerance: " << Base::m_tolerance << std::endl;
+				std::cout << "m_info: " << m_info << std::endl;
+				#endif
+
+
+			}
+
+			/** \internal */
+			/** Resizes the x vector to match the dimension of b and sets the elements to zero*/
+
 			void setL(Index L)
 			{
 				if (L < 1)
