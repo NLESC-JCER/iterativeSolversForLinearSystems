@@ -92,7 +92,8 @@ namespace Eigen
 				IDR(S)Stab(L) algorithm
 			*/
 			//Set up the initial residual
-			r.head(N) = rhs - mat * precond.solve(x);
+			//r.head(N) = rhs - mat * precond.solve(x);
+			r.head(N) = rhs - mat * x;
 			tol_error = r.head(N).norm();
 
 			/*
@@ -167,6 +168,8 @@ namespace Eigen
 			DenseMatrixTypeCol sigma(S, S);
 			FullPivLU<DenseMatrixTypeCol> lu_sigma;
 
+			bool reset_while=false;
+
 			while (k < maxIters)
 			{
 
@@ -208,7 +211,11 @@ namespace Eigen
 					//It is possible to early-exit here, at the cost of computing L additional dot products per cycle.
 					//However by continuing the residual is expected to be lowered even further, this gives a safety margin to counteract the residual gap.
 					//Based on the matrices from Ref. 2 this early-exit was deemed not worth the extra cost.
-
+					//one has to early exist here, else u becomes nan
+					if(r.topRows(Nj_plus_1).norm()<tol2){
+						reset_while=true;
+						break;
+					}
 					for (Index i = 1; i <= j - 2; ++i)
 					{
 						//This only affects the case L>2
@@ -219,7 +226,7 @@ namespace Eigen
 						//r=[r;A*r_{j-2}]
 						r.segment(Nj_min_1, N).noalias() = mat * precond.solve(r.segment(N * (j - 2), N));
 					}
-
+					
 					for (Index q = 1; q <= S; ++q)
 					{
 						if (q != 1)
@@ -249,6 +256,10 @@ namespace Eigen
 
 							//The same, but using MGS instead of GS!
 							//http://eigen.tuxfamily.org/bz/show_bug.cgi?id=1610 Scalar h is not supported
+							//This results in NaN if uhead is zero. This only happens if something went wrong in u already
+							//I.e. when the residual is zero!
+							u.head(Nj_plus_1)/=u.head(Nj_plus_1).norm();
+							//DenseMatrixTypeCol h2=V.block(Nj, q-1, N, 1).adjoint()*V.block(Nj, q-1, N, 1);	
 							for(Index i=0;i<=q-2;++i)
 							{
 								DenseMatrixTypeCol h2=V.block(Nj, i, N, 1).adjoint()*V.block(Nj, i, N, 1);
@@ -277,7 +288,16 @@ namespace Eigen
 
 					U = V;
 				}
-
+				if(reset_while){
+					tol_error = r.head(N).norm();
+					if (tol_error < tol2)
+					{
+						//Slightly early exit by moving the criterion before the update of U,
+						//after the main while loop the result of that calculation would not be needed.
+						break;
+					}					
+					continue;
+				}
 				//r=[r;mat*r_{L-1}]
 				//Save this in rHat, the storage form for rHat is more suitable for the argmin step than the way r is stored.
 				//In Eigen 3.4 this step can be compactly done via: rHat = r.reshaped(N, L + 1);
