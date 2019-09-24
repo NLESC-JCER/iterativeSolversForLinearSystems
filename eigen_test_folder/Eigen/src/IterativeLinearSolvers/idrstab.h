@@ -29,6 +29,7 @@
 #include <Eigen/QR>
 #include <Eigen/LU>
 #include <Eigen/Dense>
+#include <cmath>
 
 #define IDRSTAB_DEBUG_INFO 2 	//Print info to console about the problem being solved.
 
@@ -155,12 +156,56 @@ namespace Eigen
 				u.head(N) /= u.head(N).norm();
 				U.block(0, q, N, 1) = u.head(N);
 			}
+/*
+TODO: For some matrices it is not possible to span a basis with dimension S
+In that case U.block(0, 0, N, S).adjoint()*U.block(0, 0, N, S) will not be identity
+but partially NaN.
+The dimension that should be spannable should also indicate the amount of iterations needed to some extent. If the solution exists in a Krylov subspace consisting of r and Ar, then there is no need
+to also check A^2r!
 
+Het is als de Krylov subspace een lineair afhankelijke vectoren krijgt, waardoor het een dimensie lager dan S opspant
+
+This seems to be the final remaining issue :D
+*/
 			#if IDRSTAB_DEBUG_INFO >1
 			//Columns of U should be orthonormal
 			std::cout << "Check orthonormality U\n" <<
 				U.block(0, 0, N, S).adjoint()*U.block(0, 0, N, S) << std::endl;
 			#endif
+			DenseMatrixTypeRow titanic = U.block(0, 0, N, S).adjoint()*U.block(0, 0, N, S);
+			//Scalar tol_titanic=1e5;
+			if(std::abs(titanic.block(0,0,1,S).norm())>1+1e-2 || titanic.block(0,0,1,S).norm()-titanic.block(0,0,1,S).norm()!=0.0)
+			{
+				std::cout<<"Titanic 4"<<std::endl;
+				/*
+					Perform argmin, return exact result
+					eth3.m part with U.block(0, 0, N, argmin_L) as p
+
+				*/
+				//Figure out which part is bad
+				Index argmin_L=0;
+				for(Index t=0;t<S;++t){
+					if(std::abs(titanic(t,t))>1e-2){
+						argmin_L++;
+					}
+				}
+				DenseMatrixTypeCol B(N, argmin_L);
+				for (Index i = 0; i < argmin_L; ++i)
+				{
+					B.col(i).noalias() = mat * precond.solve(U.block(0, i, N, 1));
+				}
+
+				VectorType delta=B.fullPivHouseholderQr().solve(r.head(N));
+				x=x+U.block(0, 0, N, argmin_L)*delta;
+				iters = k;
+				x = precond.solve(x);
+				tol_error = (mat * x - rhs).norm() / rhs_norm;
+				return true;
+			}
+
+/*
+men kan het ook via householder rank revealing ofzo
+*/
 
 			//Pre-allocate sigma, this space will be recycled without additional allocations.
 			//Also construct a LU-decomposition object beforehand.
@@ -202,10 +247,41 @@ namespace Eigen
 						alpha.noalias() = lu_sigma.solve(R_T * r.head(N));
 					}
 
+
+					// for(auto &a: alpha){
+					// 	if(a-a!=0.0){
+					// 		a=0;
+					// 	}
+					// }
+					if (alpha.norm()-alpha.norm()!=0.0)
+					{
+						/*
+							Everything will fail, take the best estimate for x and abandon ship.
+						*/
+						std::cout << "TITANIC 3" << std::endl;
+
+						//Obtain new solution and residual from this update
+						for(auto &a: alpha){
+							if(a-a!=0.0){
+								a=0;
+							}
+						}
+						update.noalias() = U.topRows(N) * alpha;
+						r.head(N) -=  mat * precond.solve(update);
+						x += update;
+
+
+						iters = k;
+						x = precond.solve(x);
+						tol_error = (mat * x - rhs).norm() / rhs_norm;
+						return true;
+					}
+
 					//Obtain new solution and residual from this update
 					update.noalias() = U.topRows(N) * alpha;
-					x += update;
 					r.head(N) -=  mat * precond.solve(update);
+					x += update;
+
 
 
 					for (Index i = 1; i <= j - 2; ++i)
@@ -282,47 +358,48 @@ namespace Eigen
 						//Since the segment u.head(Nj_plus_1) is not needed next q-iteration this may be combined into (Only works for GS method, not MGS):
 						//V.block(0, q - 1, Nj_plus_1, 1).noalias() = u.head(Nj_plus_1) / u.segment(Nj, N).norm();
 
-						bool valid_u=u(0,0)-u(0,0)==0.0;
-						bool valid_r=r(0,0)-r(0,0)==0.0;
-						bool valid_V=V(0,0)-V(0,0)==0.0;
-						bool valid_U=U(0,0)-U(0,0)==0.0;
-						if ((valid_u && valid_r && valid_V && valid_U)==false)
-						{
-							/*
-								Everything will fail, take the best estimate for x and abandon ship.
-							*/
-							iters = k;
-							x = precond.solve(x);
-							tol_error = (mat * x - rhs).norm() / rhs_norm;
-							return true;
-						}
+						// bool valid_u=u(0,0)-u(0,0)==0.0;
+						// bool valid_r=r(0,0)-r(0,0)==0.0;
+						// bool valid_V=V(0,0)-V(0,0)==0.0;
+						// bool valid_U=U(0,0)-U(0,0)==0.0;
+						// if ((valid_u && valid_r && valid_V && valid_U)==false)
+						// {
+						// 	/*
+						// 		Everything will fail, take the best estimate for x and abandon ship.
+						// 	*/
+						// 	std::cout << "TITANIC 1" << std::endl;
+						// 	iters = k;
+						// 	x = precond.solve(x);
+						// 	tol_error = (mat * x - rhs).norm() / rhs_norm;
+						// 	return true;
+						// }
 
-						#if IDRSTAB_DEBUG_INFO >1
-						std::cout << "New u should be orthonormal to the columns of V" << std::endl;
-						std::cout << V.block(Nj, 0, N, q).adjoint()*u.block(Nj, 0, N, 1) << std::endl; //OK
-						DenseMatrixTypeCol h=V.block(Nj, 0, N, q).adjoint()*u.block(Nj, 0, N, 1);
-						if(h(0,0)-h(0,0)!=0.0)
-						{
-							std::cout << "mat:\n" << mat << std::endl;
-							std::cout << "rhs:\n" << rhs << std::endl;
-							std::cout << "u:\n" << u << std::endl;
-							std::cout << "V:\n" << V << std::endl;
-							std::cout << "r:\n" << r << std::endl;
-							std::cout << "q:" << q << std::endl;
-							std::cout << "j:" << j << std::endl;
-							std::cout << "k:" << k << std::endl;
-							DenseMatrixTypeCol mat_dense=DenseMatrixTypeCol(mat);
-							ComplexEigenSolver<DenseMatrixTypeCol> es(mat_dense);
-							std::cout << "The eigenvalues of A are:" << std::endl << es.eigenvalues() << std::endl;
-							std::cout << "The matrix of eigenvectors, V, is:" << std::endl << es.eigenvectors() << std::endl << std::endl;
-							std::cout << "x:\n" << x << std::endl;
-							x = precond.solve(x);
-							std::cout << "x:\n" << x << std::endl;
-							std::cout << "True relative residual:      " << (mat * x - rhs).norm() / rhs.norm() << std::endl;
-							*(int*)0 = 0;
-						}
+						// #if IDRSTAB_DEBUG_INFO >1
+						// std::cout << "New u should be orthonormal to the columns of V" << std::endl;
+						// std::cout << V.block(Nj, 0, N, q).adjoint()*u.block(Nj, 0, N, 1) << std::endl; //OK
+						// DenseMatrixTypeCol h=V.block(Nj, 0, N, q).adjoint()*u.block(Nj, 0, N, 1);
+						// if(h(0,0)-h(0,0)!=0.0)
+						// {
+						// 	std::cout << "mat:\n" << mat << std::endl;
+						// 	std::cout << "rhs:\n" << rhs << std::endl;
+						// 	std::cout << "u:\n" << u << std::endl;
+						// 	std::cout << "V:\n" << V << std::endl;
+						// 	std::cout << "r:\n" << r << std::endl;
+						// 	std::cout << "q:" << q << std::endl;
+						// 	std::cout << "j:" << j << std::endl;
+						// 	std::cout << "k:" << k << std::endl;
+						// 	DenseMatrixTypeCol mat_dense=DenseMatrixTypeCol(mat);
+						// 	ComplexEigenSolver<DenseMatrixTypeCol> es(mat_dense);
+						// 	std::cout << "The eigenvalues of A are:" << std::endl << es.eigenvalues() << std::endl;
+						// 	std::cout << "The matrix of eigenvectors, V, is:" << std::endl << es.eigenvectors() << std::endl << std::endl;
+						// 	std::cout << "x:\n" << x << std::endl;
+						// 	x = precond.solve(x);
+						// 	std::cout << "x:\n" << x << std::endl;
+						// 	std::cout << "True relative residual:      " << (mat * x - rhs).norm() / rhs.norm() << std::endl;
+						// 	*(int*)0 = 0;
+						// }
 
-						#endif
+						// #endif
 					}
 
 					#if IDRSTAB_DEBUG_INFO >1
@@ -343,6 +420,21 @@ namespace Eigen
 						break;
 					}
 					continue;
+				}
+				bool valid_u=u(0,0)-u(0,0)==0.0;
+				bool valid_r=r(0,0)-r(0,0)==0.0;
+				//bool valid_V=V(0,0)-V(0,0)==0.0;
+				bool valid_U=U(0,0)-U(0,0)==0.0;
+				if ((valid_u && valid_r && valid_U)==false)
+				{
+					/*
+						Everything will fail, take the best estimate for x and abandon ship.
+					*/
+					std::cout << "TITANIC 1" << std::endl;
+					iters = k;
+					x = precond.solve(x);
+					tol_error = (mat * x - rhs).norm() / rhs_norm;
+					return true;
 				}
 				//r=[r;mat*r_{L-1}]
 				//Save this in rHat, the storage form for rHat is more suitable for the argmin step than the way r is stored.
