@@ -34,6 +34,7 @@
 
 #if IDRSTAB_DEBUG_INFO
 #include <chrono>
+#include <Eigen/Eigenvalues>
 #endif
 namespace Eigen
 {
@@ -50,6 +51,7 @@ namespace Eigen
 			std::chrono::high_resolution_clock::time_point t1 = std::chrono::high_resolution_clock::now();
 			std::cout << "Matrix size: " << mat.rows() << std::endl;
 			#endif
+
 			/*
 				Setup
 			*/
@@ -92,7 +94,6 @@ namespace Eigen
 				IDR(S)Stab(L) algorithm
 			*/
 			//Set up the initial residual
-			//r.head(N) = rhs - mat * precond.solve(x);
 			r.head(N) = rhs - mat * x;
 			tol_error = r.head(N).norm();
 
@@ -122,31 +123,29 @@ namespace Eigen
 				if (q != 0)
 				{
 					/*
-					        THIS IS DOING GS, NOT MGS
-									THE ORIGINAL VERSION IS DOING GS, NOT MGS OR HH!
-									u.head(N) -= U.topLeftCorner(N, q) * (U.topLeftCorner(N, q).adjoint() * u.head(N));
+					        Gram-Schmidt orthogonalization:
 					*/
-				  //u.head(N) -= U.topLeftCorner(N, q) * (U.topLeftCorner(N, q).adjoint() * u.head(N));
+					//u.head(N) -= U.topLeftCorner(N, q) * (U.topLeftCorner(N, q).adjoint() * u.head(N));
 					/*
-					MGS method:
+					        Modified Gram-Schmidt method:
+						Note that GS and MGS are mathematically equivalent, they are NOT numerically equivalent.
+
+						Eventough h is a scalar, converting the dot product to Scalar is not supported:
+						http://eigen.tuxfamily.org/bz/show_bug.cgi?id=1610
 					*/
 					VectorType w = mat * precond.solve(u.head(N));
-					//VectorType v = u.head(N);
-					for(Index i=0;i<q;++i)
+					for (Index i = 0; i < q; ++i)
 					{
-						VectorType v=U.block(0, i, N, 1);
-						DenseMatrixTypeCol h=v.adjoint()*w;
-						w=w-h(0,0) * v;
-					}
-					u.head(N)=w;
+						//"Normalization factor" (v is normalized already)
+						VectorType v = U.block(0, i, N, 1);
 
-					/*
-					Attempt at doing same with householder
-					*/
-					// VectorType w = mat * precond.solve(u.head(N));
-					// //U.block(0, q-1, N, 1)=w;
-					// HouseholderQR<DenseMatrixTypeCol> qrU(U.topLeftCorner(N, q));
-					// u.head(N) = (qrU.householderQ() * w);
+						//"How much do v and w have in common?"
+						DenseMatrixTypeCol h = v.adjoint() * w;
+
+						//"Subtract the part they have in common"
+						w = w - h(0, 0) * v;
+					}
+					u.head(N) = w;
 				}
 				else
 				{
@@ -168,7 +167,7 @@ namespace Eigen
 			DenseMatrixTypeCol sigma(S, S);
 			FullPivLU<DenseMatrixTypeCol> lu_sigma;
 
-			bool reset_while=false;
+			bool reset_while = false;
 
 			while (k < maxIters)
 			{
@@ -208,14 +207,7 @@ namespace Eigen
 					x += update;
 					r.head(N) -=  mat * precond.solve(update);
 
-					//It is possible to early-exit here, at the cost of computing L additional dot products per cycle.
-					//However by continuing the residual is expected to be lowered even further, this gives a safety margin to counteract the residual gap.
-					//Based on the matrices from Ref. 2 this early-exit was deemed not worth the extra cost.
-					//one has to early exist here, else u becomes nan
-					if(r.topRows(Nj_plus_1).norm()<tol2){
-						reset_while=true;
-						break;
-					}
+
 					for (Index i = 1; i <= j - 2; ++i)
 					{
 						//This only affects the case L>2
@@ -226,7 +218,16 @@ namespace Eigen
 						//r=[r;A*r_{j-2}]
 						r.segment(Nj_min_1, N).noalias() = mat * precond.solve(r.segment(N * (j - 2), N));
 					}
-					
+					//It is possible to early-exit here, at the cost of computing L additional dot products per cycle.
+					//However by continuing the residual is expected to be lowered even further, this gives a safety margin to counteract the residual gap.
+					//Based on the matrices from Ref. 2 this early-exit was deemed not worth the extra cost.
+					//one has to early exist here, else u becomes NaN
+					if (r.head(N).norm() < tol2)
+					{
+						reset_while = true;
+						break;
+					}
+
 					for (Index q = 1; q <= S; ++q)
 					{
 						if (q != 1)
@@ -249,34 +250,78 @@ namespace Eigen
 						//Orthonormalize u_j to the columns of V_j(:,1:q-1)
 						if (q > 1)
 						{
-							//Gram-Schmidt-like procedure to make u orthogonal to the columns of V.
-							//The vector mu from Ref. 1 is obtained implicitly:
-							//mu=V.block(Nj, 0, N, q - 1).adjoint() * u.block(Nj, 0, N, 1).
+							/*
+								Gram-Schmidt-like procedure to make u orthogonal to the columns of V.
+								The vector mu from Ref. 1 is obtained implicitly:
+								mu=V.block(Nj, 0, N, q - 1).adjoint() * u.block(Nj, 0, N, 1).
+							*/
 							//u.head(Nj_plus_1) -= V.topLeftCorner(Nj_plus_1, q - 1) * (V.block(Nj, 0, N, q - 1).adjoint() * u.segment(Nj, N));
 
-							//The same, but using MGS instead of GS!
-							//http://eigen.tuxfamily.org/bz/show_bug.cgi?id=1610 Scalar h is not supported
-							//This results in NaN if uhead is zero. This only happens if something went wrong in u already
-							//I.e. when the residual is zero!
-							u.head(Nj_plus_1)/=u.head(Nj_plus_1).norm();
-							//DenseMatrixTypeCol h2=V.block(Nj, q-1, N, 1).adjoint()*V.block(Nj, q-1, N, 1);	
-							for(Index i=0;i<=q-2;++i)
+							/*
+								The same, but using MGS instead of GS!
+								This results in NaN if uhead is zero. This only happens if something went wrong in u already
+								I.e. when the residual is zero!
+							*/
+							u.head(Nj_plus_1) /= u.head(Nj_plus_1).norm(); //This is not strictly necessary
+							for (Index i = 0; i <= q - 2; ++i)
 							{
-								DenseMatrixTypeCol h2=V.block(Nj, i, N, 1).adjoint()*V.block(Nj, i, N, 1);
-								DenseMatrixTypeCol h=V.block(Nj, i, N, 1).adjoint() * u.segment(Nj, N)/h2(0,0);
-								u.head(Nj_plus_1)=u.head(Nj_plus_1)-h(0,0)*V.block(0,i,Nj_plus_1, 1);
+								//"Normalization factor"
+								DenseMatrixTypeCol h2 = V.block(Nj, i, N, 1).adjoint() * V.block(Nj, i, N, 1);
+
+								//"How much do u and V have in common?"
+								DenseMatrixTypeCol h = V.block(Nj, i, N, 1).adjoint() * u.segment(Nj, N) / h2(0, 0);
+
+								//"Subtract the part they have in common"
+								u.head(Nj_plus_1) = u.head(Nj_plus_1) - h(0, 0) * V.block(0, i, Nj_plus_1, 1);
 							}
 						}
 
 						//Normalize u and assign to a column of V
 						u.head(Nj_plus_1) /= u.block(Nj, 0, N, 1).norm();
 						V.block(0, q - 1, Nj_plus_1, 1) = u.head(Nj_plus_1);
-						//Since the segment u.head(Nj_plus_1) is not needed next q-iteration this can be combined into:
+						//Since the segment u.head(Nj_plus_1) is not needed next q-iteration this may be combined into (Only works for GS method, not MGS):
 						//V.block(0, q - 1, Nj_plus_1, 1).noalias() = u.head(Nj_plus_1) / u.segment(Nj, N).norm();
+
+						bool valid_u=u(0,0)-u(0,0)==0.0;
+						bool valid_r=r(0,0)-r(0,0)==0.0;
+						bool valid_V=V(0,0)-V(0,0)==0.0;
+						bool valid_U=U(0,0)-U(0,0)==0.0;
+						if ((valid_u && valid_r && valid_V && valid_U)==false)
+						{
+							/*
+								Everything will fail, take the best estimate for x and abandon ship.
+							*/
+							iters = k;
+							x = precond.solve(x);
+							tol_error = (mat * x - rhs).norm() / rhs_norm;
+							return true;
+						}
 
 						#if IDRSTAB_DEBUG_INFO >1
 						std::cout << "New u should be orthonormal to the columns of V" << std::endl;
 						std::cout << V.block(Nj, 0, N, q).adjoint()*u.block(Nj, 0, N, 1) << std::endl; //OK
+						DenseMatrixTypeCol h=V.block(Nj, 0, N, q).adjoint()*u.block(Nj, 0, N, 1);
+						if(h(0,0)-h(0,0)!=0.0)
+						{
+							std::cout << "mat:\n" << mat << std::endl;
+							std::cout << "rhs:\n" << rhs << std::endl;
+							std::cout << "u:\n" << u << std::endl;
+							std::cout << "V:\n" << V << std::endl;
+							std::cout << "r:\n" << r << std::endl;
+							std::cout << "q:" << q << std::endl;
+							std::cout << "j:" << j << std::endl;
+							std::cout << "k:" << k << std::endl;
+							DenseMatrixTypeCol mat_dense=DenseMatrixTypeCol(mat);
+							ComplexEigenSolver<DenseMatrixTypeCol> es(mat_dense);
+							std::cout << "The eigenvalues of A are:" << std::endl << es.eigenvalues() << std::endl;
+							std::cout << "The matrix of eigenvectors, V, is:" << std::endl << es.eigenvectors() << std::endl << std::endl;
+							std::cout << "x:\n" << x << std::endl;
+							x = precond.solve(x);
+							std::cout << "x:\n" << x << std::endl;
+							std::cout << "True relative residual:      " << (mat * x - rhs).norm() / rhs.norm() << std::endl;
+							*(int*)0 = 0;
+						}
+
 						#endif
 					}
 
@@ -288,14 +333,15 @@ namespace Eigen
 
 					U = V;
 				}
-				if(reset_while){
+				if (reset_while)
+				{
 					tol_error = r.head(N).norm();
 					if (tol_error < tol2)
 					{
 						//Slightly early exit by moving the criterion before the update of U,
 						//after the main while loop the result of that calculation would not be needed.
 						break;
-					}					
+					}
 					continue;
 				}
 				//r=[r;mat*r_{L-1}]
@@ -437,7 +483,6 @@ namespace Eigen
 			{
 				m_iterations = Base::maxIterations();
 				m_error = Base::m_tolerance;
-
 				bool ret = internal::idrstab(matrix(), b, x, Base::m_preconditioner, m_iterations, m_error,
 						m_L, m_S);
 
