@@ -116,6 +116,14 @@ namespace Eigen
 				R_T* R_T.adjoint() << std::endl;
 			#endif
 
+			bool valid_u=true;
+			bool valid_r=true;
+			bool valid_V=true;
+			bool valid_U=true;
+
+			DenseMatrixTypeCol h_FOM(S,S-1);
+			h_FOM.setZero();
+			U.setZero(); //PO: Not needed, only for testing
 			//Determine an initial U matrix of size N x S
 			for (Index q = 0; q < S; ++q)
 			{
@@ -141,19 +149,52 @@ namespace Eigen
 						VectorType v = U.block(0, i, N, 1);
 
 						//"How much do v and w have in common?"
-						DenseMatrixTypeCol h = v.adjoint() * w;
+						//DenseMatrixTypeCol h2 = v.adjoint() * w;
+						h_FOM(i,q-1)=v.adjoint() * w;
 
 						//"Subtract the part they have in common"
-						w = w - h(0, 0) * v;
+						//w = w - h2(0, 0) * v;
+						w = w - h_FOM(i, q-1) * v;
 					}
 					u.head(N) = w;
+					h_FOM(q+1-1,q-1)=u.head(N).norm();
+					//if(h_FOM(q+1-1,q-1)-h_FOM(q+1-1,q-1) !=0.0 || std::abs(h_FOM(q+1-1,q-1))<1e-16)
+					//if(h_FOM(q+1-1,q-1)-h_FOM(q+1-1,q-1) !=0.0 || std::abs(h_FOM(q+1-1,q-1))==0.0)
+					if(h_FOM(q+1-1,q-1)-h_FOM(q+1-1,q-1) !=0.0)
+					//TODO: SET TOL TO SQRT EPS,
+					//If the orthogonalization cannot continue, exit and use the FOM algorithm to obtain a best estimate.
+					{
+						std::cout << "FOM EXIT"<<std::endl;
+						//Apply the FOM algorithm and exit
+						//Not happy with this criterion
+						Scalar beta=r.head(N).norm(); //This is expected to be tol_error at this point!
+						VectorType e1(q);
+						e1(0)=1.0;
+						DenseMatrixTypeCol y=h_FOM.block(0,0,q,q).colPivHouseholderQr().solve(beta*e1);
+						x=x+U.block(0, 0, N, q)*y;
+						iters = k;
+						x = precond.solve(x);
+						tol_error = (mat * x - rhs).norm() / rhs_norm;
+						std::cout << "tol_error: " <<tol_error<< std::endl;
+						std::cout << "x:\n" <<x<< std::endl;
+						std::cout<< "h_FOM:\n"<< h_FOM<<std::endl;
+						std::cout<< "U:\n"<< U<<std::endl;
+						std::cout<< "u:\n"<< u<<std::endl;
+						std::cout<< "q:\n"<< q<<std::endl;
+						return true;
+					}
+					if(std::abs(h_FOM(q+1-1,q-1))!=0.0){
+						//This only happens if u is exactly zero.
+						u.head(N) /= h_FOM(q+1-1,q-1);
+					}
+
 				}
 				else
 				{
 					u.head(N) = r.head(N);
+					u.head(N)/=u.head(N).norm();
 				}
 
-				u.head(N) /= u.head(N).norm();
 				U.block(0, q, N, 1) = u.head(N);
 			}
 /*
@@ -171,17 +212,19 @@ This seems to be the final remaining issue :D
 			//Columns of U should be orthonormal
 			std::cout << "Check orthonormality U\n" <<
 				U.block(0, 0, N, S).adjoint()*U.block(0, 0, N, S) << std::endl;
+			std::cout<< "h_FOM:\n"<< h_FOM<<std::endl;
 			#endif
+			/*
 			DenseMatrixTypeRow titanic = U.block(0, 0, N, S).adjoint()*U.block(0, 0, N, S);
 			//Scalar tol_titanic=1e5;
 			if(std::abs(titanic.block(0,0,1,S).norm())>1+1e-2 || titanic.block(0,0,1,S).norm()-titanic.block(0,0,1,S).norm()!=0.0)
 			{
 				std::cout<<"Titanic 4"<<std::endl;
-				/*
-					Perform argmin, return exact result
-					eth3.m part with U.block(0, 0, N, argmin_L) as p
 
-				*/
+				//	Perform argmin, return exact result
+				//	eth3.m part with U.block(0, 0, N, argmin_L) as p
+
+
 				//Figure out which part is bad
 				Index argmin_L=0;
 				for(Index t=0;t<S;++t){
@@ -202,6 +245,7 @@ This seems to be the final remaining issue :D
 				tol_error = (mat * x - rhs).norm() / rhs_norm;
 				return true;
 			}
+			*/
 
 /*
 men kan het ook via householder rank revealing ofzo
@@ -258,7 +302,7 @@ men kan het ook via householder rank revealing ofzo
 						/*
 							Everything will fail, take the best estimate for x and abandon ship.
 						*/
-						std::cout << "TITANIC 3" << std::endl;
+						std::cout << "TITANIC 305" << std::endl;
 
 						//Obtain new solution and residual from this update
 						for(auto &a: alpha){
@@ -274,6 +318,7 @@ men kan het ook via householder rank revealing ofzo
 						iters = k;
 						x = precond.solve(x);
 						tol_error = (mat * x - rhs).norm() / rhs_norm;
+						std::cout << "tol_error:" << tol_error<< std::endl;
 						return true;
 					}
 
@@ -358,22 +403,6 @@ men kan het ook via householder rank revealing ofzo
 						//Since the segment u.head(Nj_plus_1) is not needed next q-iteration this may be combined into (Only works for GS method, not MGS):
 						//V.block(0, q - 1, Nj_plus_1, 1).noalias() = u.head(Nj_plus_1) / u.segment(Nj, N).norm();
 
-						// bool valid_u=u(0,0)-u(0,0)==0.0;
-						// bool valid_r=r(0,0)-r(0,0)==0.0;
-						// bool valid_V=V(0,0)-V(0,0)==0.0;
-						// bool valid_U=U(0,0)-U(0,0)==0.0;
-						// if ((valid_u && valid_r && valid_V && valid_U)==false)
-						// {
-						// 	/*
-						// 		Everything will fail, take the best estimate for x and abandon ship.
-						// 	*/
-						// 	std::cout << "TITANIC 1" << std::endl;
-						// 	iters = k;
-						// 	x = precond.solve(x);
-						// 	tol_error = (mat * x - rhs).norm() / rhs_norm;
-						// 	return true;
-						// }
-
 						// #if IDRSTAB_DEBUG_INFO >1
 						// std::cout << "New u should be orthonormal to the columns of V" << std::endl;
 						// std::cout << V.block(Nj, 0, N, q).adjoint()*u.block(Nj, 0, N, 1) << std::endl; //OK
@@ -409,6 +438,24 @@ men kan het ook via householder rank revealing ofzo
 					#endif
 
 					U = V;
+
+					valid_u=u(0,0)-u(0,0)==0.0;
+					valid_r=r(0,0)-r(0,0)==0.0;
+					valid_V=V(0,0)-V(0,0)==0.0;
+					valid_U=U(0,0)-U(0,0)==0.0;
+					if ((valid_u && valid_r && valid_V && valid_U)==false)
+					{
+						/*
+							Everything will fail, take the best estimate for x and abandon ship.
+						*/
+						std::cout << "TITANIC 410" << std::endl;
+						iters = k;
+						x = precond.solve(x);
+						tol_error = (mat * x - rhs).norm() / rhs_norm;
+						std::cout << "tol_error:" << tol_error<< std::endl;
+						return true;
+					}
+
 				}
 				if (reset_while)
 				{
@@ -421,19 +468,19 @@ men kan het ook via householder rank revealing ofzo
 					}
 					continue;
 				}
-				bool valid_u=u(0,0)-u(0,0)==0.0;
-				bool valid_r=r(0,0)-r(0,0)==0.0;
-				//bool valid_V=V(0,0)-V(0,0)==0.0;
-				bool valid_U=U(0,0)-U(0,0)==0.0;
-				if ((valid_u && valid_r && valid_U)==false)
+				//bool valid_u=u(0,0)-u(0,0)==0.0;
+				valid_r=r(0,0)-r(0,0)==0.0;
+				//bool valid_U=U(0,0)-U(0,0)==0.0;
+				if (valid_r==false)
 				{
 					/*
 						Everything will fail, take the best estimate for x and abandon ship.
 					*/
-					std::cout << "TITANIC 1" << std::endl;
+					std::cout << "TITANIC 427" << std::endl;
 					iters = k;
 					x = precond.solve(x);
 					tol_error = (mat * x - rhs).norm() / rhs_norm;
+					std::cout << "tol_error:" << tol_error<< std::endl;
 					return true;
 				}
 				//r=[r;mat*r_{L-1}]
@@ -450,6 +497,14 @@ men kan het ook via householder rank revealing ofzo
 				*/
 				gamma.noalias() = rHat.rightCols(L).fullPivHouseholderQr().solve(r.head(N)); //Argmin step
 
+				if(gamma.norm()-gamma.norm()!=0.0){
+					for(auto &g:gamma){
+						if(g-g!=0.0){
+							g=0.0;
+						}
+					}
+				}
+
 				//Update solution and residual using the "minimized residual coefficients"
 				update.noalias() = rHat.leftCols(L) * gamma;
 				x += update;
@@ -463,6 +518,23 @@ men kan het ook via householder rank revealing ofzo
 					//Slightly early exit by moving the criterion before the update of U,
 					//after the main while loop the result of that calculation would not be needed.
 					break;
+				}
+
+				valid_u=u(0,0)-u(0,0)==0.0;
+				valid_r=r(0,0)-r(0,0)==0.0;
+				valid_V=V(0,0)-V(0,0)==0.0;
+				valid_U=U(0,0)-U(0,0)==0.0;
+				if ((valid_u && valid_r && valid_V && valid_U)==false)
+				{
+					/*
+						Everything will fail, take the best estimate for x and abandon ship.
+					*/
+					std::cout << "TITANIC 524" << std::endl;
+					iters = k;
+					x = precond.solve(x);
+					tol_error = (mat * x - rhs).norm() / rhs_norm;
+					std::cout << "tol_error:" << tol_error<< std::endl;
+					return true;
 				}
 
 				/*
