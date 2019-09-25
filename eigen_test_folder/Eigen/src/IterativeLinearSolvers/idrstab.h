@@ -2,6 +2,7 @@
 	C.E.M. Schoutrop
 	"The tactical nuke of iterative solvers"
 	-working concept method on 26/08/2019
+	-Version that consistently passes the Eigen unit-tests on 25/09/2019
 
 	Right-preconditioning is applied here;	Ax=b->AMinvu=b.
 	instead of solving for x, we solve for MInv*u
@@ -14,9 +15,10 @@
 	Possible optimizations (PO):
 	-See //PO: notes in the code
 
-	This implementation of IDR(S)Stab(L) is based on
+	This implementation of IDRStab is based on
 		1. Aihara, K., Abe, K., & Ishiwata, E. (2014). A variant of IDRstab with reliable update strategies for solving sparse linear systems. Journal of Computational and Applied Mathematics, 259, 244-258. doi:10.1016/j.cam.2013.08.028
 		2. Aihara, K., Abe, K., & Ishiwata, E. (2015). Preconditioned IDRStab Algorithms for Solving Nonsymmetric Linear Systems. International Journal of Applied Mathematics, 45(3).
+		3. Saad, Y. (2003). Iterative Methods for Sparse Linear Systems: Second Edition. Philadelphia, PA: SIAM.
 
 	Special acknowledgement to Mischa Senders for his work on an initial reference implementation of this algorithm in MATLAB and to Adithya Vijaykumar for providing the framework for this solver.
 
@@ -33,7 +35,7 @@
 
 #define IDRSTAB_DEBUG_INFO 2 	//Print info to console about the problem being solved.
 
-#if IDRSTAB_DEBUG_INFO
+#if IDRSTAB_DEBUG_INFO>0
 #include <chrono>
 #include <Eigen/Eigenvalues>
 #endif
@@ -54,7 +56,7 @@ namespace Eigen
 			#endif
 
 			/*
-				Setup
+				Setup and type definitions.
 			*/
 			typedef typename Dest::Scalar Scalar;
 			typedef typename Dest::RealScalar RealScalar;
@@ -76,11 +78,16 @@ namespace Eigen
 
 			if (rhs_norm == 0)
 			{
+				/*
+					If b==0, then the exact solution is x=0.
+					rhs_norm is needed for other calculations anyways, this exit is a freebie.
+				*/
 				x.setZero();
+				tol_error = 0.0;
 				return true;
 			}
 
-			//Define maximum sizes to prevent any reallocation later on
+			//Define maximum sizes to prevent any reallocation later on.
 			VectorType u(N * (L + 1));
 			VectorType r(N * (L + 1));
 			DenseMatrixTypeCol V(N * (L + 1), S);
@@ -90,25 +97,31 @@ namespace Eigen
 			VectorType gamma(L);
 			VectorType update(N);
 
-			//VectorType h(1);
+			//Booleans to signal whether or not internal variables have become unfit to continue computing.
+			bool valid_u = true;
+			bool valid_r = true;
+			bool valid_U = true;
+
 			/*
-				IDR(S)Stab(L) algorithm
+				Main IDRStab algorithm
 			*/
 			//Set up the initial residual
 			r.head(N) = rhs - mat * x;
 			tol_error = r.head(N).norm();
 
 			/*
-				Select an initial (N x S) matrix R0
+				Select an initial (N x S) matrix R0.
+				1. Generate random R0, orthonormalize the result.
+				2. This results in R0, however to save memory and compute we only need the adjoint of R0. This is given by the matrix R_T.
 			*/
-			//Generate random R0, orthonormalize the result
-			//This results in R0, however to save memory and compute we only need the adjoint of R0
 			//PO: To save on memory consumption identity can be sparse
 			HouseholderQR<DenseMatrixTypeCol> qr(DenseMatrixTypeCol::Random(N, S));
 			DenseMatrixTypeRow R_T = (qr.householderQ() * DenseMatrixTypeCol::Identity(N, S)).adjoint();
 
-			//Additionally, the matrix (mat.adjoint()*R_tilde).adjoint()=R_tilde.adjoint()*mat by the anti-distributivity property of the adjoint.
-			//This results in AR_T, which is constant and can be precomputed.
+			/*
+				Additionally, the matrix (mat.adjoint()*R_tilde).adjoint()=R_tilde.adjoint()*mat by the anti-distributivity property of the adjoint.
+				This results in AR_T, which is constant and can be precomputed.
+			*/
 			DenseMatrixTypeRow AR_T = DenseMatrixTypeRow(R_T * mat);
 
 			#if IDRSTAB_DEBUG_INFO >1
@@ -116,14 +129,8 @@ namespace Eigen
 				R_T* R_T.adjoint() << std::endl;
 			#endif
 
-			bool valid_u=true;
-			bool valid_r=true;
-			bool valid_V=true;
-			bool valid_U=true;
-
-			DenseMatrixTypeCol h_FOM(S,S-1);
+			DenseMatrixTypeCol h_FOM(S, S - 1);
 			h_FOM.setZero();
-			U.setZero(); //PO: Not needed, only for testing
 			//Determine an initial U matrix of size N x S
 			for (Index q = 0; q < S; ++q)
 			{
@@ -132,11 +139,12 @@ namespace Eigen
 				if (q != 0)
 				{
 					/*
-					        Gram-Schmidt orthogonalization:
+						Original Gram-Schmidt orthogonalization strategy from Ref. 1:
 					*/
 					//u.head(N) -= U.topLeftCorner(N, q) * (U.topLeftCorner(N, q).adjoint() * u.head(N));
+
 					/*
-					        Modified Gram-Schmidt method:
+					        Modified Gram-Schmidt strategy:
 						Note that GS and MGS are mathematically equivalent, they are NOT numerically equivalent.
 
 						Eventough h is a scalar, converting the dot product to Scalar is not supported:
@@ -149,110 +157,83 @@ namespace Eigen
 						VectorType v = U.block(0, i, N, 1);
 
 						//"How much do v and w have in common?"
-						//DenseMatrixTypeCol h2 = v.adjoint() * w;
-						h_FOM(i,q-1)=v.adjoint() * w;
+						h_FOM(i, q - 1) = v.adjoint() * w;
 
 						//"Subtract the part they have in common"
-						//w = w - h2(0, 0) * v;
-						w = w - h_FOM(i, q-1) * v;
+						w = w - h_FOM(i, q - 1) * v;
 					}
 					u.head(N) = w;
-					h_FOM(q+1-1,q-1)=u.head(N).norm();
-					//if(h_FOM(q+1-1,q-1)-h_FOM(q+1-1,q-1) !=0.0 || std::abs(h_FOM(q+1-1,q-1))<1e-16)
-					//if(h_FOM(q+1-1,q-1)-h_FOM(q+1-1,q-1) !=0.0 || std::abs(h_FOM(q+1-1,q-1))==0.0)
-					if(h_FOM(q+1-1,q-1)-h_FOM(q+1-1,q-1) !=0.0)
-					//TODO: SET TOL TO SQRT EPS,
-					//If the orthogonalization cannot continue, exit and use the FOM algorithm to obtain a best estimate.
+					h_FOM(q, q - 1) = u.head(N).norm();
+					if (h_FOM(q, q - 1) - h_FOM(q, q - 1) != 0.0)
 					{
-						std::cout << "FOM EXIT"<<std::endl;
+						/*
+							If this component of the Hessenberg matrix has become NaN, then the orthonormalization cannot continue.
+							This implies that it is (numerically) not possible to construct a Krylov subspace of dimension S.
+							Such cases occur if:
+							1. The basis of dimension <S is sufficient to exactly solve the linear system.
+								I.e. the current residual is in span{r,Ar,...A^{m-1}r}, where m<S.
+							2. Two vectors vectors generated from r, Ar,... have are (practically) parallel.
+
+							In case 1, the exact solution to the system can be obtained from the "Full Orthogonalization Method" (Algorithm 6.4 in the book of Saad).
+						*/
+						#if IDRSTAB_DEBUG_INFO >2
+						std::cout << "FOM EXIT" << std::endl;
+						#endif
 						//Apply the FOM algorithm and exit
 						//Not happy with this criterion
-						Scalar beta=r.head(N).norm(); //This is expected to be tol_error at this point!
+						Scalar beta = r.head(N).norm(); //This is expected to be tol_error at this point!
 						VectorType e1(q);
-						e1(0)=1.0;
-						DenseMatrixTypeCol y=h_FOM.block(0,0,q,q).colPivHouseholderQr().solve(beta*e1);
-						x=x+U.block(0, 0, N, q)*y;
+						e1(0) = 1.0;
+						DenseMatrixTypeCol y = h_FOM.block(0, 0, q, q).colPivHouseholderQr().solve(beta * e1);
+						x = x + U.block(0, 0, N, q) * y;
 						iters = k;
 						x = precond.solve(x);
 						tol_error = (mat * x - rhs).norm() / rhs_norm;
-						std::cout << "tol_error: " <<tol_error<< std::endl;
-						std::cout << "x:\n" <<x<< std::endl;
-						std::cout<< "h_FOM:\n"<< h_FOM<<std::endl;
-						std::cout<< "U:\n"<< U<<std::endl;
-						std::cout<< "u:\n"<< u<<std::endl;
-						std::cout<< "q:\n"<< q<<std::endl;
+						#if IDRSTAB_DEBUG_INFO >2
+						std::cout << "tol_error: " << tol_error << std::endl;
+						std::cout << "x:\n" << x << std::endl;
+						std::cout << "h_FOM:\n" << h_FOM << std::endl;
+						std::cout << "U:\n" << U << std::endl;
+						std::cout << "u:\n" << u << std::endl;
+						std::cout << "q:\n" << q << std::endl;
+						#endif
 						return true;
 					}
-					if(std::abs(h_FOM(q+1-1,q-1))!=0.0){
-						//This only happens if u is exactly zero.
-						u.head(N) /= h_FOM(q+1-1,q-1);
+					if (std::abs(h_FOM(q, q - 1)) != 0.0)
+					{
+						/*
+							This only happens if u is NOT exactly zero. In case it is exactly zero
+							it would imply that that this u has no component in the direction of the current residual.
+
+							By then setting u to zero it will not contribute any further (as it should).
+							Whereas attempting to normalize results in division by zero.
+
+							Contrary to what one would suspect, the comparison with ==0.0 for floating-point types is intended here.
+							Any arbritary non-zero u is fine to continue, however if it contains either NaN or Inf the algorithm will break down.
+						*/
+						u.head(N) /= h_FOM(q, q - 1);
 					}
 
 				}
 				else
 				{
 					u.head(N) = r.head(N);
-					u.head(N)/=u.head(N).norm();
+					u.head(N) /= u.head(N).norm();
 				}
 
 				U.block(0, q, N, 1) = u.head(N);
 			}
-/*
-TODO: For some matrices it is not possible to span a basis with dimension S
-In that case U.block(0, 0, N, S).adjoint()*U.block(0, 0, N, S) will not be identity
-but partially NaN.
-The dimension that should be spannable should also indicate the amount of iterations needed to some extent. If the solution exists in a Krylov subspace consisting of r and Ar, then there is no need
-to also check A^2r!
 
-Het is als de Krylov subspace een lineair afhankelijke vectoren krijgt, waardoor het een dimensie lager dan S opspant
-
-This seems to be the final remaining issue :D
-*/
 			#if IDRSTAB_DEBUG_INFO >1
 			//Columns of U should be orthonormal
 			std::cout << "Check orthonormality U\n" <<
 				U.block(0, 0, N, S).adjoint()*U.block(0, 0, N, S) << std::endl;
-			std::cout<< "h_FOM:\n"<< h_FOM<<std::endl;
+			//h_FOM should not contain any NaNs
+			std::cout << "h_FOM:\n" << h_FOM << std::endl;
 			#endif
-			/*
-			DenseMatrixTypeRow titanic = U.block(0, 0, N, S).adjoint()*U.block(0, 0, N, S);
-			//Scalar tol_titanic=1e5;
-			if(std::abs(titanic.block(0,0,1,S).norm())>1+1e-2 || titanic.block(0,0,1,S).norm()-titanic.block(0,0,1,S).norm()!=0.0)
-			{
-				std::cout<<"Titanic 4"<<std::endl;
-
-				//	Perform argmin, return exact result
-				//	eth3.m part with U.block(0, 0, N, argmin_L) as p
-
-
-				//Figure out which part is bad
-				Index argmin_L=0;
-				for(Index t=0;t<S;++t){
-					if(std::abs(titanic(t,t))>1e-2){
-						argmin_L++;
-					}
-				}
-				DenseMatrixTypeCol B(N, argmin_L);
-				for (Index i = 0; i < argmin_L; ++i)
-				{
-					B.col(i).noalias() = mat * precond.solve(U.block(0, i, N, 1));
-				}
-
-				VectorType delta=B.fullPivHouseholderQr().solve(r.head(N));
-				x=x+U.block(0, 0, N, argmin_L)*delta;
-				iters = k;
-				x = precond.solve(x);
-				tol_error = (mat * x - rhs).norm() / rhs_norm;
-				return true;
-			}
-			*/
-
-/*
-men kan het ook via householder rank revealing ofzo
-*/
 
 			//Pre-allocate sigma, this space will be recycled without additional allocations.
-			//Also construct a LU-decomposition object beforehand.
+			//Also construct an LU-decomposition object beforehand.
 			DenseMatrixTypeCol sigma(S, S);
 			FullPivLU<DenseMatrixTypeCol> lu_sigma;
 
@@ -263,7 +244,7 @@ men kan het ook via householder rank revealing ofzo
 
 				for (Index j = 1; j <= L; ++j)
 				{
-					//Cache some indexing variables that occur frequently and are constant
+					//Cache some indexing variables that occur frequently and are constant.
 					const Index Nj = N * j;
 					const Index Nj_plus_1 = N * (j + 1);
 					const Index Nj_min_1 = N * (j - 1);
@@ -291,42 +272,10 @@ men kan het ook via householder rank revealing ofzo
 						alpha.noalias() = lu_sigma.solve(R_T * r.head(N));
 					}
 
-
-					// for(auto &a: alpha){
-					// 	if(a-a!=0.0){
-					// 		a=0;
-					// 	}
-					// }
-					if (alpha.norm()-alpha.norm()!=0.0)
-					{
-						/*
-							Everything will fail, take the best estimate for x and abandon ship.
-						*/
-						std::cout << "TITANIC 305" << std::endl;
-
-						//Obtain new solution and residual from this update
-						for(auto &a: alpha){
-							if(a-a!=0.0){
-								a=0;
-							}
-						}
-						update.noalias() = U.topRows(N) * alpha;
-						r.head(N) -=  mat * precond.solve(update);
-						x += update;
-
-
-						iters = k;
-						x = precond.solve(x);
-						tol_error = (mat * x - rhs).norm() / rhs_norm;
-						std::cout << "tol_error:" << tol_error<< std::endl;
-						return true;
-					}
-
 					//Obtain new solution and residual from this update
 					update.noalias() = U.topRows(N) * alpha;
 					r.head(N) -=  mat * precond.solve(update);
 					x += update;
-
 
 
 					for (Index i = 1; i <= j - 2; ++i)
@@ -339,12 +288,10 @@ men kan het ook via householder rank revealing ofzo
 						//r=[r;A*r_{j-2}]
 						r.segment(Nj_min_1, N).noalias() = mat * precond.solve(r.segment(N * (j - 2), N));
 					}
-					//It is possible to early-exit here, at the cost of computing L additional dot products per cycle.
-					//However by continuing the residual is expected to be lowered even further, this gives a safety margin to counteract the residual gap.
-					//Based on the matrices from Ref. 2 this early-exit was deemed not worth the extra cost.
-					//one has to early exist here, else u becomes NaN
+
 					if (r.head(N).norm() < tol2)
 					{
+						//If at this point the algorithm has converged, the orthonormalization of U will fail.
 						reset_while = true;
 						break;
 					}
@@ -372,18 +319,16 @@ men kan het ook via householder rank revealing ofzo
 						if (q > 1)
 						{
 							/*
-								Gram-Schmidt-like procedure to make u orthogonal to the columns of V.
+								Original Gram-Schmidt-like procedure to make u orthogonal to the columns of V from Ref. 1.
+
 								The vector mu from Ref. 1 is obtained implicitly:
 								mu=V.block(Nj, 0, N, q - 1).adjoint() * u.block(Nj, 0, N, 1).
 							*/
 							//u.head(Nj_plus_1) -= V.topLeftCorner(Nj_plus_1, q - 1) * (V.block(Nj, 0, N, q - 1).adjoint() * u.segment(Nj, N));
 
 							/*
-								The same, but using MGS instead of GS!
-								This results in NaN if uhead is zero. This only happens if something went wrong in u already
-								I.e. when the residual is zero!
+								The same, but using MGS instead of GS
 							*/
-							u.head(Nj_plus_1) /= u.head(Nj_plus_1).norm(); //This is not strictly necessary
 							for (Index i = 0; i <= q - 2; ++i)
 							{
 								//"Normalization factor"
@@ -398,91 +343,81 @@ men kan het ook via householder rank revealing ofzo
 						}
 
 						//Normalize u and assign to a column of V
-						u.head(Nj_plus_1) /= u.block(Nj, 0, N, 1).norm();
+						Scalar normalization_constant = u.block(Nj, 0, N, 1).norm();
+						if (normalization_constant != 0.0)
+						{
+							/*
+								If u is exactly zero, this will lead to a NaN. Small, non-zero u is fine. In the case of NaN the algorithm breaks down,
+								eventhough it could have continued, since u zero implies that there is no further update in a given direction.
+								In exact arithmetic this would imply the algorithm converged exactly.
+							*/
+							u.head(Nj_plus_1) /= normalization_constant;
+						}
 						V.block(0, q - 1, Nj_plus_1, 1) = u.head(Nj_plus_1);
-						//Since the segment u.head(Nj_plus_1) is not needed next q-iteration this may be combined into (Only works for GS method, not MGS):
+						//Since the segment u.head(Nj_plus_1) is not needed next q-iteration this may be combined into one (Only works for GS method, not MGS):
 						//V.block(0, q - 1, Nj_plus_1, 1).noalias() = u.head(Nj_plus_1) / u.segment(Nj, N).norm();
 
-						// #if IDRSTAB_DEBUG_INFO >1
-						// std::cout << "New u should be orthonormal to the columns of V" << std::endl;
-						// std::cout << V.block(Nj, 0, N, q).adjoint()*u.block(Nj, 0, N, 1) << std::endl; //OK
-						// DenseMatrixTypeCol h=V.block(Nj, 0, N, q).adjoint()*u.block(Nj, 0, N, 1);
-						// if(h(0,0)-h(0,0)!=0.0)
-						// {
-						// 	std::cout << "mat:\n" << mat << std::endl;
-						// 	std::cout << "rhs:\n" << rhs << std::endl;
-						// 	std::cout << "u:\n" << u << std::endl;
-						// 	std::cout << "V:\n" << V << std::endl;
-						// 	std::cout << "r:\n" << r << std::endl;
-						// 	std::cout << "q:" << q << std::endl;
-						// 	std::cout << "j:" << j << std::endl;
-						// 	std::cout << "k:" << k << std::endl;
-						// 	DenseMatrixTypeCol mat_dense=DenseMatrixTypeCol(mat);
-						// 	ComplexEigenSolver<DenseMatrixTypeCol> es(mat_dense);
-						// 	std::cout << "The eigenvalues of A are:" << std::endl << es.eigenvalues() << std::endl;
-						// 	std::cout << "The matrix of eigenvectors, V, is:" << std::endl << es.eigenvectors() << std::endl << std::endl;
-						// 	std::cout << "x:\n" << x << std::endl;
-						// 	x = precond.solve(x);
-						// 	std::cout << "x:\n" << x << std::endl;
-						// 	std::cout << "True relative residual:      " << (mat * x - rhs).norm() / rhs.norm() << std::endl;
-						// 	*(int*)0 = 0;
-						// }
+						#if IDRSTAB_DEBUG_INFO >1
+						std::cout << "New u should be orthonormal to the columns of V" << std::endl;
+						std::cout << V.block(Nj, 0, N, q).adjoint()*u.block(Nj, 0, N, 1) << std::endl; //OK
+						#endif
 
-						// #endif
 					}
 
 					#if IDRSTAB_DEBUG_INFO >1
-					//This should be identity, since the columns of V are orthonormalized
-					std::cout << "This should be identity matrix:" << std::endl;
+					//This should be identity, since the columns of V are orthonormalized.
+					std::cout << "Check if the columns of V are orthonormalized" << std::endl;
 					std::cout << V.block(Nj, 0, N, S).adjoint()* V.block(Nj, 0, N, S) << std::endl;
 					#endif
 
 					U = V;
 
-					valid_u=u(0,0)-u(0,0)==0.0;
-					valid_r=r(0,0)-r(0,0)==0.0;
-					valid_V=V(0,0)-V(0,0)==0.0;
-					valid_U=U(0,0)-U(0,0)==0.0;
-					if ((valid_u && valid_r && valid_V && valid_U)==false)
+					//It is sufficient to check if the first component has become NaN or Inf.
+					valid_u = (u(0, 0) - u(0, 0) == 0.0);
+					valid_U = (U(0, 0) - U(0, 0) == 0.0);
+					if ((valid_u && valid_U) == false)
 					{
 						/*
-							Everything will fail, take the best estimate for x and abandon ship.
+							One of the intermediate quantities has become invalid, either because
+							the algorithm has converged, or an unfixable error has occured.
+
+							Therefore take the most recent solution and return.
 						*/
-						std::cout << "TITANIC 410" << std::endl;
 						iters = k;
 						x = precond.solve(x);
 						tol_error = (mat * x - rhs).norm() / rhs_norm;
-						std::cout << "tol_error:" << tol_error<< std::endl;
+						std::cout << "tol_error:" << tol_error << std::endl;
 						return true;
 					}
 
 				}
 				if (reset_while)
 				{
+					reset_while = false;
 					tol_error = r.head(N).norm();
 					if (tol_error < tol2)
 					{
-						//Slightly early exit by moving the criterion before the update of U,
-						//after the main while loop the result of that calculation would not be needed.
+						/*
+							Slightly early exit by moving the criterion before the update of U,
+							after the main while loop the result of that calculation would not be needed.
+						*/
 						break;
 					}
 					continue;
 				}
-				//bool valid_u=u(0,0)-u(0,0)==0.0;
-				valid_r=r(0,0)-r(0,0)==0.0;
-				//bool valid_U=U(0,0)-U(0,0)==0.0;
-				if (valid_r==false)
+				valid_r = r(0, 0) - r(0, 0) == 0.0;
+				if (valid_r == false)
 				{
 					/*
-						Everything will fail, take the best estimate for x and abandon ship.
+						The residual vector has become invalid, therefore the polynomial step cannot be completed.
+						//TODO: Of course it can, if you just use the parts that are not NaN.
 					*/
-					std::cout << "TITANIC 427" << std::endl;
 					iters = k;
 					x = precond.solve(x);
 					tol_error = (mat * x - rhs).norm() / rhs_norm;
-					std::cout << "tol_error:" << tol_error<< std::endl;
 					return true;
 				}
+
 				//r=[r;mat*r_{L-1}]
 				//Save this in rHat, the storage form for rHat is more suitable for the argmin step than the way r is stored.
 				//In Eigen 3.4 this step can be compactly done via: rHat = r.reshaped(N, L + 1);
@@ -496,14 +431,6 @@ men kan het ook via householder rank revealing ofzo
 					The polynomial step
 				*/
 				gamma.noalias() = rHat.rightCols(L).fullPivHouseholderQr().solve(r.head(N)); //Argmin step
-
-				if(gamma.norm()-gamma.norm()!=0.0){
-					for(auto &g:gamma){
-						if(g-g!=0.0){
-							g=0.0;
-						}
-					}
-				}
 
 				//Update solution and residual using the "minimized residual coefficients"
 				update.noalias() = rHat.leftCols(L) * gamma;
@@ -520,20 +447,15 @@ men kan het ook via householder rank revealing ofzo
 					break;
 				}
 
-				valid_u=u(0,0)-u(0,0)==0.0;
-				valid_r=r(0,0)-r(0,0)==0.0;
-				valid_V=V(0,0)-V(0,0)==0.0;
-				valid_U=U(0,0)-U(0,0)==0.0;
-				if ((valid_u && valid_r && valid_V && valid_U)==false)
+				valid_U = (U(0, 0) - U(0, 0) == 0.0);
+				if (valid_U == false)
 				{
 					/*
-						Everything will fail, take the best estimate for x and abandon ship.
+					        The polynomial step could be completed, however the matrix U is not valid. Therefore the next iteration cannot take place.
 					*/
-					std::cout << "TITANIC 524" << std::endl;
 					iters = k;
 					x = precond.solve(x);
 					tol_error = (mat * x - rhs).norm() / rhs_norm;
-					std::cout << "tol_error:" << tol_error<< std::endl;
 					return true;
 				}
 
@@ -560,7 +482,6 @@ men kan het ook via householder rank revealing ofzo
 			std::cout << "#iterations:     " << k << std::endl;
 			std::cout << "Estimated relative residual: " << tol_error << std::endl;
 			std::cout << "True relative residual:      " << (mat * x - rhs).norm() / rhs.norm() << std::endl;
-			// tol_error = (mat * x - rhs).norm() / rhs.norm();
 			#endif
 
 			return true;
@@ -655,9 +576,9 @@ men kan het ook via householder rank revealing ofzo
 					: NoConvergence;
 
 				#if IDRSTAB_DEBUG_INFO >0
-				//std::cout << "ret: " << ret << std::endl;
-				//std::cout << "m_error: " << m_error << std::endl;
-				//std::cout << "Base::m_tolerance: " << Base::m_tolerance << std::endl;
+				std::cout << "ret: " << ret << std::endl;
+				std::cout << "m_error: " << m_error << std::endl;
+				std::cout << "Base::m_tolerance: " << Base::m_tolerance << std::endl;
 				std::cout << "m_info: " << m_info << std::endl;
 				#endif
 
