@@ -131,7 +131,10 @@ namespace Eigen
 
 			DenseMatrixTypeCol h_FOM(S, S - 1);
 			h_FOM.setZero();
-			//Determine an initial U matrix of size N x S
+
+			/*
+				Determine an initial U matrix of size N x S
+			*/
 			for (Index q = 0; q < S; ++q)
 			{
 				//By default S=4, q!=0 case is more likely, this ordering is better for branch prediction.
@@ -179,16 +182,23 @@ namespace Eigen
 						#if IDRSTAB_DEBUG_INFO >2
 						std::cout << "FOM EXIT" << std::endl;
 						#endif
-						//Apply the FOM algorithm and exit
-						//Not happy with this criterion
+
+						/*
+							Complete the FOM-algorithm
+						*/
 						Scalar beta = r.head(N).norm(); //This is expected to be tol_error at this point!
 						VectorType e1(q);
-						e1(0) = 1.0;
-						DenseMatrixTypeCol y = h_FOM.block(0, 0, q, q).colPivHouseholderQr().solve(beta * e1);
-						x = x + U.block(0, 0, N, q) * y;
+						e1(0) = beta;
+						DenseMatrixTypeCol y = h_FOM.topLeftCorner(q, q).colPivHouseholderQr().solve(e1);
+						x += U.topLeftCorner(N, q) * y;
+
+						/*
+							Exit
+						*/
 						iters = k;
 						x = precond.solve(x);
-						tol_error = (mat * x - rhs).norm() / rhs_norm;
+						tol_error = (rhs - mat * x).norm() / rhs_norm;
+
 						#if IDRSTAB_DEBUG_INFO >2
 						std::cout << "tol_error: " << tol_error << std::endl;
 						std::cout << "x:\n" << x << std::endl;
@@ -197,6 +207,7 @@ namespace Eigen
 						std::cout << "u:\n" << u << std::endl;
 						std::cout << "q:\n" << q << std::endl;
 						#endif
+
 						return true;
 					}
 					if (std::abs(h_FOM(q, q - 1)) != 0.0)
@@ -470,11 +481,14 @@ namespace Eigen
 				}
 
 			}
+
+			/*
+				Exit after the while loop terminated.
+			*/
 			iters = k;
 			x = precond.solve(x);
 			tol_error = tol_error / rhs_norm;
 			#if IDRSTAB_DEBUG_INFO >0
-			//Print experimental info
 			std::chrono::high_resolution_clock::time_point t2 = std::chrono::high_resolution_clock::now();
 			std::chrono::duration<double> time_span = std::chrono::duration_cast<std::chrono::duration<double>>
 				(t2 - t1);
