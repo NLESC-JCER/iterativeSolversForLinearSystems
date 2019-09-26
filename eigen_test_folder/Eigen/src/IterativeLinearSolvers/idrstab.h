@@ -87,15 +87,15 @@ namespace Eigen
 				return true;
 			}
 
-			if(S>=N || L>=N)
+			if (S>=N || L>=N)
 			{
 				/*
 					The matrix is so extremely small, or the choice of L and S is very poor
 					in that case solving directly will be best.
-					Note that this can still fail to meet the error criterion if a direct is used >_>
+					Note that this can still fail to meet the error criterion if a direct method is used >_>
 				*/
 				x = DenseMatrixTypeRow(mat).colPivHouseholderQr().solve(rhs);
-				tol_error=(rhs-mat*x).norm()/rhs_norm();
+				tol_error=(rhs-mat*x).norm()/rhs_norm;
 				return true;
 			}
 
