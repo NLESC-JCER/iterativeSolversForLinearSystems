@@ -64,10 +64,10 @@ namespace Eigen
 			typedef Matrix<Scalar, Dynamic, Dynamic, ColMajor> DenseMatrixTypeCol;
 			typedef Matrix<Scalar, Dynamic, Dynamic, RowMajor> DenseMatrixTypeRow;
 
-			//If the matrix is small, or L,S are too large. Limit their size to size of the matrix.
 			const Index N = x.rows();
-			L = L < N ? L : N;
-			S = S < N ? S : N;
+			//If the matrix is small, or L,S are too large. Limit their size to size of the matrix.
+			//L = L < N ? L : N;
+			//S = S < N ? S : N;
 
 			Index k = 0; //Iteration counter
 			const Index maxIters = iters;
@@ -84,6 +84,18 @@ namespace Eigen
 				*/
 				x.setZero();
 				tol_error = 0.0;
+				return true;
+			}
+
+			if(S>=N || L>=N)
+			{
+				/*
+					The matrix is so extremely small, or the choice of L and S is very poor
+					in that case solving directly will be best.
+					Note that this can still fail to meet the error criterion if a direct is used >_>
+				*/
+				x = DenseMatrixTypeRow(mat).colPivHouseholderQr().solve(rhs);
+				tol_error=(rhs-mat*x).norm()/rhs_norm();
 				return true;
 			}
 
@@ -179,7 +191,7 @@ namespace Eigen
 
 							In case 1, the exact solution to the system can be obtained from the "Full Orthogonalization Method" (Algorithm 6.4 in the book of Saad).
 						*/
-						#if IDRSTAB_DEBUG_INFO >2
+						#if IDRSTAB_DEBUG_INFO >1
 						std::cout << "FOM EXIT" << std::endl;
 						#endif
 
@@ -199,12 +211,12 @@ namespace Eigen
 						x = precond.solve(x);
 						tol_error = (rhs - mat * x).norm() / rhs_norm;
 
-						#if IDRSTAB_DEBUG_INFO >2
+						#if IDRSTAB_DEBUG_INFO >1
 						std::cout << "tol_error: " << tol_error << std::endl;
 						std::cout << "x:\n" << x << std::endl;
 						std::cout << "h_FOM:\n" << h_FOM << std::endl;
-						std::cout << "U:\n" << U << std::endl;
-						std::cout << "u:\n" << u << std::endl;
+						//std::cout << "U:\n" << U << std::endl;
+						//std::cout << "u:\n" << u << std::endl;
 						std::cout << "q:\n" << q << std::endl;
 						#endif
 
@@ -224,6 +236,37 @@ namespace Eigen
 						*/
 						u.head(N) /= h_FOM(q, q - 1);
 					}
+					// else
+					// {
+					// 	#if IDRSTAB_DEBUG_INFO >1
+					// 	std::cout << "FOM EXIT2" << std::endl;
+					// 	#endif
+
+					// 	/*
+					// 		Complete the FOM-algorithm
+					// 	*/
+					// 	Scalar beta = r.head(N).norm(); //This is expected to be tol_error at this point!
+					// 	VectorType e1(q);
+					// 	e1(0) = beta;
+					// 	DenseMatrixTypeCol y = h_FOM.topLeftCorner(q, q).colPivHouseholderQr().solve(e1);
+					// 	x += U.topLeftCorner(N, q) * y;
+
+					// 	/*
+					// 		Exit
+					// 	*/
+					// 	iters = k;
+					// 	x = precond.solve(x);
+					// 	tol_error = (rhs - mat * x).norm() / rhs_norm;
+
+					// 	#if IDRSTAB_DEBUG_INFO >1
+					// 	std::cout << "tol_error: " << tol_error << std::endl;
+					// 	//std::cout << "x:\n" << x << std::endl;
+					// 	std::cout << "h_FOM:\n" << h_FOM << std::endl;
+					// 	//std::cout << "U:\n" << U << std::endl;
+					// 	//std::cout << "u:\n" << u << std::endl;
+					// 	std::cout << "q:\n" << q << std::endl;
+					// 	#endif
+					// }
 
 				}
 				else
@@ -364,6 +407,13 @@ namespace Eigen
 							*/
 							u.head(Nj_plus_1) /= normalization_constant;
 						}
+						else
+						{
+							u.head(Nj_plus_1).setZero();
+							std::cout<<"normalization_constant==0"<<std::endl;
+							break;
+						}
+
 						V.block(0, q - 1, Nj_plus_1, 1) = u.head(Nj_plus_1);
 						//Since the segment u.head(Nj_plus_1) is not needed next q-iteration this may be combined into one (Only works for GS method, not MGS):
 						//V.block(0, q - 1, Nj_plus_1, 1).noalias() = u.head(Nj_plus_1) / u.segment(Nj, N).norm();
@@ -594,6 +644,18 @@ namespace Eigen
 				std::cout << "m_error: " << m_error << std::endl;
 				std::cout << "Base::m_tolerance: " << Base::m_tolerance << std::endl;
 				std::cout << "m_info: " << m_info << std::endl;
+				if(m_info!=Success)
+				{
+					if(m_error<Base::m_tolerance*10)
+					{
+						std::cout << "Unsatisfactory abort" << std::endl;
+					}
+					else
+					{
+						std::cout << "Legitimate abort" << std::endl;
+					}
+
+				}
 				#endif
 
 
