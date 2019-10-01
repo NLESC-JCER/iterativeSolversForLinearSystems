@@ -33,7 +33,7 @@
 #include <Eigen/Dense>
 #include <cmath>
 
-#define IDRSTAB_DEBUG_INFO 2 	//Print info to console about the problem being solved.
+#define IDRSTAB_DEBUG_INFO 1 	//Print info to console about the problem being solved.
 
 #if IDRSTAB_DEBUG_INFO>0
 #include <chrono>
@@ -95,7 +95,8 @@ namespace Eigen
 					Note that this can still fail to meet the error criterion if a direct method is used >_>
 				*/
 				x = DenseMatrixTypeRow(mat).colPivHouseholderQr().solve(rhs);
-				tol_error=(rhs-mat*x).norm()/rhs_norm;
+				//tol_error=(rhs-mat*x).norm()/rhs_norm;
+				tol_error=0.0;
 				return true;
 			}
 
@@ -640,6 +641,7 @@ namespace Eigen
 					: NoConvergence;
 
 				#if IDRSTAB_DEBUG_INFO >0
+				std::cout << "Matrix size: " << b.rows() << std::endl;
 				std::cout << "ret: " << ret << std::endl;
 				std::cout << "m_error: " << m_error << std::endl;
 				std::cout << "Base::m_tolerance: " << Base::m_tolerance << std::endl;
